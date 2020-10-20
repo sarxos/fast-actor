@@ -3,7 +3,7 @@ package test.fastactor;
 import java.util.UUID;
 
 
-public class Envelope<M> {
+public class Envelope<M> implements Deliverable {
 
 	/**
 	 * Value to be delivered.
@@ -18,11 +18,16 @@ public class Envelope<M> {
 	/**
 	 * Target UUID.
 	 */
-	final UUID target;
+	private final UUID target;
 
-	public Envelope(final M value, final UUID sender, final UUID target) {
-		this.message = value;
+	public Envelope(final M message, final UUID sender, final UUID target) {
+		this.message = message;
 		this.sender = sender;
 		this.target = target;
+	}
+
+	@Override
+	public UUID getTarget() {
+		return target;
 	}
 }

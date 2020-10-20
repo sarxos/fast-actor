@@ -9,4 +9,12 @@ public abstract class Actor<M> {
 	public ActorContext<M> context() {
 		return context;
 	}
+
+	public void preStart() {
+		// please override when necessary
+	}
+
+	public void postStop() {
+		// please override when necessary
+	}
 }

@@ -19,24 +19,76 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	static final Random RANDOM = new Random(System.currentTimeMillis());
 	static final ThreadLocal<ActorContext<?>> CONTEXT = new ThreadLocal<>();
 
+	private final Deque<ActorRef<?>> children = new ArrayDeque<>(0);
 	private final Deque<Consumer<M>> behaviours = new ArrayDeque<>(0);
+	private final UUID uuid = new UUID(RANDOM.nextLong(), RANDOM.nextLong());
+
 	private final ActorSystem system;
+	private final Props<A> props;
+	private final ActorRef<?> parent;
+	private final ActorRef<M> self;
 
-	final UUID uuid = new UUID(RANDOM.nextLong(), RANDOM.nextLong());
-	final ActorRef<A, M> self;
+	private Actor<M> actor;
+	private ActorRef<?> sender;
 
-	private Holder holder;
-	private ActorRef<? extends Actor<?>, ?> sender;
-
-	public ActorCell(final ActorSystem system, final Props<A> props) {
+	public ActorCell(final ActorSystem system, final Props<A> props, final UUID parent) {
 		this.system = system;
+		this.props = props;
+		this.parent = new ActorRef<>(system, parent);
 		this.self = new ActorRef<>(system, uuid);
-		this.holder = new Holder(props);
 	}
 
 	@SuppressWarnings("unchecked")
 	static <M> ActorContext<M> getActiveContext() {
 		return (ActorContext<M>) CONTEXT.get();
+	}
+
+	static <M> void setActiveContext(final ActorContext<M> context) {
+		CONTEXT.set(context);
+	}
+
+	@Override
+	public <P extends Actor<X>, X> ActorRef<X> actorOf(final Props<P> props) {
+		final ActorRef<X> child = system.actorOf(props, this.uuid);
+		children.add(child);
+		return child;
+	}
+
+	Actor<M> getOrCreateActor() {
+		if (actor == null) {
+			invokeActorConstructor();
+			invokeActorPreStart();
+		}
+		return actor;
+	}
+
+	boolean isActorInitialized() {
+		return actor != null;
+	}
+
+	void invokeActorConstructor() {
+		setActiveContext(this);
+		try {
+			actor = props.newActor();
+		} finally {
+			setActiveContext(null);
+		}
+	}
+
+	void invokeActorPreStart() {
+		if (actor != null) {
+			actor.preStart();
+		}
+	}
+
+	void invokeActorPostStop() {
+		if (actor != null) {
+			actor.postStop();
+		}
+	}
+
+	public void invokeDirective(final Directive directive) {
+		directive.executeOn(this);
 	}
 
 	public void invokeReceive(final Envelope<M> envelope) {
@@ -45,7 +97,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
 		Optional
 			.ofNullable(behaviours.peek())
-			.orElse(holder.actor()::receive)
+			.orElse(getOrCreateActor()::receive)
 			.accept(envelope.message);
 	}
 
@@ -64,12 +116,22 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	}
 
 	@Override
-	public ActorRef<A, M> self() {
+	public ActorRef<M> self() {
 		return self;
 	}
 
 	@Override
-	public ActorRef<? extends Actor<?>, ?> sender() {
+	public ActorRef<?> parent() {
+		return parent;
+	}
+
+	@Override
+	public Deque<ActorRef<?>> children() {
+		return children;
+	}
+
+	@Override
+	public ActorRef<?> sender() {
 		return sender;
 	}
 
@@ -78,38 +140,26 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		return system;
 	}
 
-	public String getThreadPoolName() {
-		return holder.getProps().getThreadPoolName();
-	}
-
 	public UUID getUuid() {
 		return uuid;
 	}
+}
 
-	class Holder {
+class ActorInitializationDirective implements Directive {
 
-		private final Props<A> props;
-		private A actor;
+	private final UUID target;
 
-		public Holder(final Props<A> props) {
-			this.props = props;
+	public ActorInitializationDirective(UUID target) {
+		this.target = target;
+	}
 
-		}
+	@Override
+	public void executeOn(final ActorCell<?, ?> cell) {
+		cell.getOrCreateActor(); // will initialize actor if not yet initialized
+	}
 
-		public Props<A> getProps() {
-			return props;
-		}
-
-		public A actor() {
-			if (actor == null) {
-				CONTEXT.set(ActorCell.this);
-				actor = props.newActor();
-			}
-			return actor;
-		}
-
-		public void initialize() {
-			this.actor = props.newActor();
-		}
+	@Override
+	public UUID getTarget() {
+		return target;
 	}
 }

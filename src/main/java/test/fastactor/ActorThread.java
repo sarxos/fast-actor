@@ -1,5 +1,6 @@
 package test.fastactor;
 
+import static java.lang.Integer.MAX_VALUE;
 import static java.util.concurrent.locks.LockSupport.park;
 import static java.util.concurrent.locks.LockSupport.unpark;
 
@@ -11,6 +12,7 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 import org.jctools.queues.MpscLinkedQueue;
 
@@ -27,6 +29,9 @@ public class ActorThread extends Thread {
 	 */
 	final Deque<Runnable> terminators = new ArrayDeque<>(2);
 
+	final Queue<Directive> internalDirectives = new LinkedList<>();
+	final Queue<Directive> externalDirectives = new MpscLinkedQueue<>();
+
 	/**
 	 * Queue to store messages from cells docked on this thread (internal communication).
 	 */
@@ -37,12 +42,6 @@ public class ActorThread extends Thread {
 	 */
 	final Queue<Envelope<?>> externalInbox = new MpscLinkedQueue<>();
 
-	/**
-	 * Fast L1 queue for bulk messages processing. Messages are not processed directly from inner
-	 * and outer queues, but are first moved to this L1 queue, and then processed in bulk.
-	 */
-	final Queue<Envelope<?>> inbox;
-
 	final ActorSystem system;
 
 	/**
@@ -51,11 +50,13 @@ public class ActorThread extends Thread {
 	 */
 	final int index;
 
-	public ActorThread(final ActorSystem system, final String name, final int index) {
+	final int throughput;
+
+	ActorThread(final ActorSystem system, final String name, final int index) {
 		super(getCurrentThreadGroup(), name);
 		this.system = system;
 		this.index = index;
-		this.inbox = new ArrayDeque<>(system.throughput * 2);
+		this.throughput = system.throughput;
 	}
 
 	private static ThreadGroup getCurrentThreadGroup() {
@@ -76,45 +77,65 @@ public class ActorThread extends Thread {
 
 	private void process() {
 
+		final Queue<Directive> directives = new LinkedList<>();
+		final Queue<Envelope<?>> inbox = new ArrayDeque<>(throughput * 2);
+
 		while (!isInterrupted()) {
 
-			final boolean hasMoreExternalItems = transfer(system.throughput, externalInbox, inbox);
-			final boolean hasMoreInternalItems = transfer(system.throughput, internalInbox, inbox);
+			final boolean moreExternalDirectives = transfer(MAX_VALUE, externalDirectives, directives);
+			final boolean moreInternalDirectives = transfer(MAX_VALUE, internalDirectives, directives);
 
-			drain(inbox);
+			drainDirectives(directives);
 
-			final boolean inboxIsEmpty = !(hasMoreInternalItems || hasMoreExternalItems);
+			final boolean moreExternalItems = transfer(throughput, externalInbox, inbox);
+			final boolean moreInternalItems = transfer(throughput, internalInbox, inbox);
 
-			if (inboxIsEmpty) {
-				park(this);
+			drainInbox(inbox);
+
+			final boolean moreElementsToProcess = false
+				|| moreExternalDirectives
+				|| moreInternalDirectives
+				|| moreExternalItems
+				|| moreInternalItems;
+
+			if (moreElementsToProcess) {
+				continue;
 			}
+
+			park(this);
 		}
 	}
 
-	private void drain(final Queue<Envelope<?>> inbox) {
+	private void drainDirectives(final Queue<Directive> directives) {
+		drain(directives, this::handleDirective);
+	}
 
-		if (inbox.isEmpty()) {
+	private void drainInbox(final Queue<Envelope<?>> inbox) {
+		drain(inbox, this::handleMessage);
+	}
+
+	private <X> void drain(final Queue<X> queue, final Consumer<X> handler) {
+
+		if (queue.isEmpty()) {
 			return;
 		}
 
-		inbox.forEach(this::handle);
-		inbox.clear();
+		queue.forEach(handler);
+		queue.clear();
 	}
 
-	private <A, M> void handle(final Envelope<M> envelope) {
-
-		final ActorCell<? extends Actor<M>, M> cell = findCellFor(envelope);
-
-		if (cell != null) {
-			cell.invokeReceive(envelope);
-		} else {
-			// TODO send to death letter
-		}
+	private void handleDirective(final Directive envelope) {
+		findCellFor(envelope).invokeDirective(envelope);
 	}
 
 	@SuppressWarnings("unchecked")
-	private <M> ActorCell<? extends Actor<M>, M> findCellFor(final Envelope<M> envelope) {
-		return (ActorCell<? extends Actor<M>, M>) cells.get(envelope.target);
+	private void handleMessage(final Envelope<?> envelope) {
+		findCellFor(envelope).invokeReceive(envelope);
+	}
+
+	@SuppressWarnings("rawtypes")
+	private ActorCell findCellFor(final Deliverable deliverable) {
+		return cells.get(deliverable.getTarget());
 	}
 
 	/**
@@ -124,23 +145,15 @@ public class ActorThread extends Thread {
 	 * @return True if there are (most likely) messages left in source queue, false otherwise.
 	 */
 	private <M> boolean transfer(final int n, final Queue<M> source, final Queue<M> target) {
-
 		for (int i = 0; i < n; i++) {
-
 			final M item = source.poll();
-
 			if (item == null) {
 				return false;
 			} else {
 				target.offer(item);
 			}
 		}
-
 		return true;
-	}
-
-	private void terminated() {
-		terminators.forEach(Runnable::run);
 	}
 
 	public ActorThread withTerminator(final Runnable terminator) {
@@ -156,17 +169,31 @@ public class ActorThread extends Thread {
 		if (overwritten) {
 			throw new IllegalStateException("Cell with ID " + uuid + " already docked on thread " + getName());
 		}
+
+		deliverDirective(new ActorInitializationDirective(uuid));
 	}
 
-	void deliverInternal(final Envelope<?> envelope) {
-		deliver(envelope, internalInbox);
+	public void deliverDirective(final Directive directive) {
+		if (this == currentThread()) {
+			depositDirective(directive, internalDirectives);
+		} else {
+			depositDirective(directive, externalDirectives);
+		}
 	}
 
-	void deliverExternal(final Envelope<?> envelope) {
-		deliver(envelope, externalInbox);
+	private <M> void depositDirective(final Directive directive, final Queue<Directive> directives) {
+		wakeUpWhen(directives.add(directive));
 	}
 
-	private void deliver(final Envelope<?> envelope, final Queue<Envelope<?>> inbox) {
+	public void deliverMessage(final Envelope<?> envelope) {
+		if (this == currentThread()) {
+			depositMessage(envelope, internalInbox);
+		} else {
+			depositMessage(envelope, externalInbox);
+		}
+	}
+
+	private void depositMessage(final Envelope<?> envelope, final Queue<Envelope<?>> inbox) {
 		wakeUpWhen(inbox.add(envelope));
 	}
 
@@ -174,5 +201,9 @@ public class ActorThread extends Thread {
 		if (modified) {
 			unpark(this);
 		}
+	}
+
+	private void terminated() {
+		terminators.forEach(Runnable::run);
 	}
 }

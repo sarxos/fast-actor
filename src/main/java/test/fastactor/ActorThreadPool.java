@@ -65,19 +65,7 @@ public class ActorThreadPool {
 	}
 
 	public <M> void deliver(final Envelope<M> envelope, final DockingInfo info) {
-
-		final Thread currentThread = Thread.currentThread();
-		final ActorThread dockingThread = threadAt(info.threadIndex);
-
-		// when caller is a local thread, then deliver message to the internal queue, and
-		// otherwise, if caller is on a separate thread, deliver message to the external
-		// queue
-
-		if (currentThread == dockingThread) {
-			dockingThread.deliverInternal(envelope);
-		} else {
-			dockingThread.deliverExternal(envelope);
-		}
+		threadAt(info.threadIndex).deliverMessage(envelope);
 	}
 
 	private ActorThread threadAt(final int threadIndex) {
