@@ -5,37 +5,48 @@ import java.util.concurrent.CompletableFuture;
 import test.fastactor.InternalTempGuardian.Ask;
 
 
-class InternalTempGuardian extends Actor<Ask<?, ?>> {
+@SuppressWarnings("rawtypes")
+class InternalTempGuardian extends Actor<Ask> {
 
 	public static final class Ask<T, R> {
 
-		final CompletableFuture<R> result = new CompletableFuture<R>();
-		final Object message;
+		final CompletableFuture<R> completable = new CompletableFuture<R>();
+		final T message;
 		final ActorRef<T> target;
 
 		public Ask(final T message, final ActorRef<T> target) {
 			this.message = message;
 			this.target = target;
 		}
+
+		void complete(final R result) {
+			completable.complete(result);
+		}
 	}
 
 	@Override
-	public void receive(final Ask<?, ?> ask) {
+	@SuppressWarnings({ "unchecked" })
+	public void receive(final Ask ask) {
 		context().actorOf(Props.create(() -> new InternalTempActor(ask)));
 	}
 }
 
-class InternalTempActor extends Actor<Object> {
+class InternalTempActor<T, R> extends Actor<R> {
 
-	final Ask<?, ?> ask;
+	final Ask<T, R> ask;
 
-	public InternalTempActor(final Ask<?, ?> ask) {
+	public InternalTempActor(final Ask<T, R> ask) {
 		this.ask = ask;
 	}
 
 	@Override
-	public void receive(final Object ask) {
-
+	public void receive(final R result) {
+		ask.complete(result);
+		context().stop();
 	}
 
+	@Override
+	public void preStart() {
+		ask.target.tell(ask.message, context().self());
+	}
 }

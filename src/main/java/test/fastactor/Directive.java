@@ -6,7 +6,13 @@ package test.fastactor;
  *
  * @author Bartosz Firyn (sarxos)
  */
-public interface Directive extends Deliverable {
+public interface Directive {
 
+	/**
+	 * Execute this directive on the {@link ActorCell} provided in the argument. Execution will
+	 * always be done by the {@link ActorThread} where given {@link ActorCell} is docked.
+	 * 
+	 * @param cell the {@link ActorCell} to execute this directive on
+	 */
 	void executeOn(final ActorCell<?, ?> cell);
 }

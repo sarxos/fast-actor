@@ -16,6 +16,14 @@ import java.util.function.Consumer;
  */
 public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
+	static class Directives {
+		final static Directive ACTOR_INITIALIZATION = new ActorInitializationDirective();
+		final static Directive ACTOR_CELL_CLEANUP = new ActorCellCleanupDirective();
+	}
+
+	final boolean MESSAGE_ACCEPTED = true;
+	final boolean MESSAGE_REJECTED = true;
+
 	static final Random RANDOM = new Random(System.currentTimeMillis());
 	static final ThreadLocal<ActorContext<?>> CONTEXT = new ThreadLocal<>();
 
@@ -28,6 +36,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	private final ActorRef<?> parent;
 	private final ActorRef<M> self;
 
+	private boolean stopped = false;
 	private Actor<M> actor;
 	private ActorRef<?> sender;
 
@@ -66,7 +75,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		return actor != null;
 	}
 
-	void invokeActorConstructor() {
+	private void invokeActorConstructor() {
 		setActiveContext(this);
 		try {
 			actor = props.newActor();
@@ -75,23 +84,27 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		}
 	}
 
-	void invokeActorPreStart() {
+	private void invokeActorPreStart() {
 		if (actor != null) {
 			actor.preStart();
 		}
 	}
 
-	void invokeActorPostStop() {
+	private void invokeActorPostStop() {
 		if (actor != null) {
 			actor.postStop();
 		}
 	}
 
-	public void invokeDirective(final Directive directive) {
+	public void receiveDirective(final Directive directive) {
 		directive.executeOn(this);
 	}
 
-	public void invokeReceive(final Envelope<M> envelope) {
+	public boolean receiveMessage(final Envelope<M> envelope) {
+
+		if (stopped) {
+			return MESSAGE_REJECTED;
+		}
 
 		this.sender = new ActorRef<>(system, envelope.sender);
 
@@ -99,6 +112,8 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 			.ofNullable(behaviours.peek())
 			.orElse(getOrCreateActor()::receive)
 			.accept(envelope.message);
+
+		return MESSAGE_ACCEPTED;
 	}
 
 	@Override
@@ -113,6 +128,16 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
 	public void unbecomeAll() {
 		behaviours.clear();
+	}
+
+	/**
+	 * Mark cell as stopped so it won't accept more messages. Any message delivered to this cell in
+	 * the meantime (if any) will be rejected.
+	 */
+	public void stop() {
+		stopped = true;
+		invokeActorPostStop();
+		receiveDirective(ActorCell.Directives.ACTOR_CELL_CLEANUP);
 	}
 
 	@Override
@@ -143,23 +168,43 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	public UUID getUuid() {
 		return uuid;
 	}
+
+	public String getThreadPoolName() {
+		return props.getThreadPoolName();
+	}
 }
 
+/**
+ * A {@link Directive} to initialize {@link Actor} in the specified {@link ActorCell}. When executed
+ * it will invoke {@link ActorCreator} to create new actor instance (if not yet created) and invoke
+ * {@link Actor#preStart()}.
+ */
 class ActorInitializationDirective implements Directive {
-
-	private final UUID target;
-
-	public ActorInitializationDirective(UUID target) {
-		this.target = target;
-	}
 
 	@Override
 	public void executeOn(final ActorCell<?, ?> cell) {
-		cell.getOrCreateActor(); // will initialize actor if not yet initialized
+
+		// this call will initialize actor if not yet initialized
+
+		cell.getOrCreateActor();
 	}
+}
+
+/**
+ * A {@link Directive} to cleanup specified {@link ActorCell}. When executed it will remove the cell
+ * from the system and the thread pool where cell is docked. Make sure to use this directive
+ * whenever cell is no longer needed and can be removed.
+ */
+class ActorCellCleanupDirective implements Directive {
 
 	@Override
-	public UUID getTarget() {
-		return target;
+	public void executeOn(final ActorCell<?, ?> cell) {
+
+		final UUID uuid = cell.getUuid();
+		final String pool = cell.getThreadPoolName();
+
+		cell
+			.system()
+			.discard(uuid, pool);
 	}
 }

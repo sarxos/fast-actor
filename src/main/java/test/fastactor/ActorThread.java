@@ -19,6 +19,8 @@ import org.jctools.queues.MpscLinkedQueue;
 
 public class ActorThread extends Thread {
 
+	private static final UUID ZERO_UUID = new UUID(0, 0);
+
 	/**
 	 * Mapping between cell {@link UUID} and corresponding {@link ActorCell} instance.
 	 */
@@ -29,8 +31,8 @@ public class ActorThread extends Thread {
 	 */
 	final Deque<Runnable> terminators = new ArrayDeque<>(2);
 
-	final Queue<Directive> internalDirectives = new LinkedList<>();
-	final Queue<Directive> externalDirectives = new MpscLinkedQueue<>();
+	final Queue<Envelope<? extends Directive>> internalDirectives = new LinkedList<>();
+	final Queue<Envelope<? extends Directive>> externalDirectives = new MpscLinkedQueue<>();
 
 	/**
 	 * Queue to store messages from cells docked on this thread (internal communication).
@@ -77,36 +79,37 @@ public class ActorThread extends Thread {
 
 	private void process() {
 
-		final Queue<Directive> directives = new LinkedList<>();
+		final Queue<Envelope<? extends Directive>> directives = new LinkedList<>();
 		final Queue<Envelope<?>> inbox = new ArrayDeque<>(throughput * 2);
 
 		while (!isInterrupted()) {
 
-			final boolean moreExternalDirectives = transfer(MAX_VALUE, externalDirectives, directives);
-			final boolean moreInternalDirectives = transfer(MAX_VALUE, internalDirectives, directives);
+			final int moreExternalDirectives = transfer(MAX_VALUE, externalDirectives, directives);
+			final int moreInternalDirectives = transfer(MAX_VALUE, internalDirectives, directives);
 
 			drainDirectives(directives);
 
-			final boolean moreExternalItems = transfer(throughput, externalInbox, inbox);
-			final boolean moreInternalItems = transfer(throughput, internalInbox, inbox);
+			final int moreExternalItems = transfer(throughput, externalInbox, inbox);
+			final int moreInternalItems = transfer(throughput, internalInbox, inbox);
 
 			drainInbox(inbox);
 
-			final boolean moreElementsToProcess = false
-				|| moreExternalDirectives
-				|| moreInternalDirectives
-				|| moreExternalItems
-				|| moreInternalItems;
+			final int moreElementsToProcess = 0
+				| moreExternalDirectives
+				| moreInternalDirectives
+				| moreExternalItems
+				| moreInternalItems;
 
-			if (moreElementsToProcess) {
-				continue;
+			// 0 => no more elements, park this thread
+			// 1 => has more elements, loop continues
+
+			if (moreElementsToProcess == 0) {
+				park(this);
 			}
-
-			park(this);
 		}
 	}
 
-	private void drainDirectives(final Queue<Directive> directives) {
+	private void drainDirectives(final Queue<Envelope<? extends Directive>> directives) {
 		drain(directives, this::handleDirective);
 	}
 
@@ -124,18 +127,18 @@ public class ActorThread extends Thread {
 		queue.clear();
 	}
 
-	private void handleDirective(final Directive envelope) {
-		findCellFor(envelope).invokeDirective(envelope);
+	private void handleDirective(final Envelope<? extends Directive> envelope) {
+		findCellFor(envelope).receiveDirective(envelope.message);
 	}
 
 	@SuppressWarnings("unchecked")
 	private void handleMessage(final Envelope<?> envelope) {
-		findCellFor(envelope).invokeReceive(envelope);
+		findCellFor(envelope).receiveMessage(envelope);
 	}
 
 	@SuppressWarnings("rawtypes")
-	private ActorCell findCellFor(final Deliverable deliverable) {
-		return cells.get(deliverable.getTarget());
+	private ActorCell findCellFor(final Envelope<?> deliverable) {
+		return cells.get(deliverable.target);
 	}
 
 	/**
@@ -144,16 +147,17 @@ public class ActorThread extends Thread {
 	 * @param target the queue to transfer messages to
 	 * @return True if there are (most likely) messages left in source queue, false otherwise.
 	 */
-	private <M> boolean transfer(final int n, final Queue<M> source, final Queue<M> target) {
+	private <M> int transfer(final int n, final Queue<M> source, final Queue<M> target) {
+
 		for (int i = 0; i < n; i++) {
 			final M item = source.poll();
 			if (item == null) {
-				return false;
+				return 0;
 			} else {
 				target.offer(item);
 			}
 		}
-		return true;
+		return 1;
 	}
 
 	public ActorThread withTerminator(final Runnable terminator) {
@@ -170,10 +174,14 @@ public class ActorThread extends Thread {
 			throw new IllegalStateException("Cell with ID " + uuid + " already docked on thread " + getName());
 		}
 
-		deliverDirective(new ActorInitializationDirective(uuid));
+		deliverDirective(new Envelope<>(new ActorInitializationDirective(), ZERO_UUID, uuid));
 	}
 
-	public void deliverDirective(final Directive directive) {
+	public void discard(final UUID uuid) {
+		cells.remove(uuid);
+	}
+
+	public void deliverDirective(final Envelope<? extends Directive> directive) {
 		if (this == currentThread()) {
 			depositDirective(directive, internalDirectives);
 		} else {
@@ -181,7 +189,7 @@ public class ActorThread extends Thread {
 		}
 	}
 
-	private <M> void depositDirective(final Directive directive, final Queue<Directive> directives) {
+	private <M> void depositDirective(final Envelope<? extends Directive> directive, final Queue<Envelope<? extends Directive>> directives) {
 		wakeUpWhen(directives.add(directive));
 	}
 

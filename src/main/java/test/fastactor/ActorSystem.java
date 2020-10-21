@@ -73,6 +73,18 @@ public class ActorSystem {
 		return cell.self();
 	}
 
+	void discard(final UUID uuid, final String poolName) {
+
+		final DockingInfo info = getDockingInfoFor(uuid).orElseThrow(cellNotFoundError(uuid));
+		final int threadIndex = info.threadIndex;
+
+		getPoolFor(poolName)
+			.orElseThrow(poolNotFoundError(poolName))
+			.discard(uuid, threadIndex);
+
+		cells.remove(uuid);
+	}
+
 	<M> void tell(final M message, final UUID sender, final UUID target) {
 
 		final Envelope<M> envelope = new Envelope<M>(message, sender, target);
@@ -88,7 +100,11 @@ public class ActorSystem {
 	}
 
 	private Optional<ActorThreadPool> getPoolFor(final Props<? extends Actor<?>> props) {
-		return Optional.ofNullable(pools.get(props.getThreadPoolName()));
+		return getPoolFor(props.getThreadPoolName());
+	}
+
+	private Optional<ActorThreadPool> getPoolFor(final String poolName) {
+		return Optional.ofNullable(pools.get(poolName));
 	}
 
 	private static Supplier<RuntimeException> poolNotFoundError(final Props<? extends Actor<?>> props) {

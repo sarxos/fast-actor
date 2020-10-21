@@ -64,18 +64,12 @@ public class ActorTest {
 	}
 
 	@Test
-	public void test_preStartHundreds() throws InterruptedException, ExecutionException, TimeoutException {
+	public void test_postStop() throws InterruptedException, ExecutionException, TimeoutException {
 
-		final var started = new ArrayList<CompletableFuture<Boolean>>();
+		final var stopped = new CompletableFuture<Boolean>();
 		final var system = ActorSystem.create("xyz");
 
 		class TestActor extends Actor<Integer> {
-
-			final CompletableFuture<Boolean> started;
-
-			public TestActor(final CompletableFuture<Boolean> started) {
-				this.started = started;
-			}
 
 			@Override
 			public void receive(final Integer number) {
@@ -84,18 +78,17 @@ public class ActorTest {
 
 			@Override
 			public void preStart() {
-				started.complete(true);
+				context().stop();
+			}
+
+			@Override
+			public void postStop() {
+				stopped.complete(true);
 			}
 		}
 
-		for (int i = 0; i < 500; i++) {
-			final var s = new CompletableFuture<Boolean>();
-			started.add(s);
-			system.actorOf(Props.create(() -> new TestActor(s)));
-		}
+		system.actorOf(Props.create(TestActor::new));
 
-		for (int i = 0; i < 500; i++) {
-			started.get(i).get(500, TimeUnit.MILLISECONDS);
-		}
+		stopped.get(500, TimeUnit.MILLISECONDS);
 	}
 }

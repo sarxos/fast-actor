@@ -19,11 +19,6 @@ public class ActorRef<M> {
 		return NO_REF;
 	}
 
-	@SuppressWarnings("unchecked")
-	<X> ActorRef<X> cast() {
-		return (ActorRef<X>) this;
-	}
-
 	public void tell(final M message) {
 		tell(message, noSender());
 	}
