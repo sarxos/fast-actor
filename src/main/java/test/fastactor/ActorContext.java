@@ -19,7 +19,7 @@ public interface ActorContext<M> {
 	 *
 	 * @return Self {@link ActorRef} which can be used to send message to self
 	 */
-	ActorRef<M> self();
+	ActorRef self();
 
 	/**
 	 * Get message sender actor-reference, i.e. the {@link ActorRef} which can be used to send
@@ -27,7 +27,7 @@ public interface ActorContext<M> {
 	 *
 	 * @return Sender {@link ActorRef} which can be used to reply to message originator
 	 */
-	ActorRef<?> sender();
+	ActorRef sender();
 
 	/**
 	 * Get parent actor reference, i.e. the {@link ActorRef} which can be used to send message to
@@ -35,7 +35,7 @@ public interface ActorContext<M> {
 	 *
 	 * @return Parent {@link ActorRef} which can be used to send message to the parent actor
 	 */
-	ActorRef<?> parent();
+	ActorRef parent();
 
 	/**
 	 * Spawn new actor from {@link Props}. The newly spawned actor will become a child of this very
@@ -46,12 +46,12 @@ public interface ActorContext<M> {
 	 * @param props the {@link Props} object used to create child actor
 	 * @return The {@link ActorRef} which can be used to send message to newly created actor
 	 */
-	public <A extends Actor<X>, X> ActorRef<X> actorOf(final Props<A> props);
+	public <A extends Actor<X>, X> ActorRef actorOf(final Props<A> props);
 
 	/**
 	 * @return List of children's {@link ActorRef}
 	 */
-	Deque<ActorRef<?>> children();
+	Deque<ActorRef> children();
 
 	/**
 	 * @param behaviour the reference to new message {@link Consumer}

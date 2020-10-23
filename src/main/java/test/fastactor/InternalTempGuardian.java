@@ -12,9 +12,9 @@ class InternalTempGuardian extends Actor<Ask> {
 
 		final CompletableFuture<R> completable = new CompletableFuture<R>();
 		final T message;
-		final ActorRef<T> target;
+		final ActorRef target;
 
-		public Ask(final T message, final ActorRef<T> target) {
+		public Ask(final T message, final ActorRef target) {
 			this.message = message;
 			this.target = target;
 		}

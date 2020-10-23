@@ -1,18 +1,19 @@
 package test.fastactor;
 
-import static java.lang.Integer.MAX_VALUE;
 import static java.util.concurrent.locks.LockSupport.park;
 import static java.util.concurrent.locks.LockSupport.unpark;
+import static test.fastactor.ActorCell.DeliveryStatus.REJECTED;
+import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 import org.jctools.queues.MpscLinkedQueue;
 
@@ -24,25 +25,27 @@ public class ActorThread extends Thread {
 	/**
 	 * Mapping between cell {@link UUID} and corresponding {@link ActorCell} instance.
 	 */
-	final Map<UUID, ActorCell<? extends Actor<?>, ?>> cells = new ConcurrentHashMap<>();
+	final Map<UUID, ActorCell<? extends Actor<?>, ?>> dockedCells = new ConcurrentHashMap<>();
+
+	/**
+	 * The active cells are the ones which have at least one message in the inbox.
+	 */
+	final Map<UUID, ActorCell<? extends Actor<?>, ?>> activeCells = new HashMap<>();
 
 	/**
 	 * {@link Runnable}s which will be run after this {@link Thread} is completed.
 	 */
 	final Deque<Runnable> terminators = new ArrayDeque<>(2);
 
-	final Queue<Envelope<? extends Directive>> internalDirectives = new LinkedList<>();
-	final Queue<Envelope<? extends Directive>> externalDirectives = new MpscLinkedQueue<>();
-
 	/**
 	 * Queue to store messages from cells docked on this thread (internal communication).
 	 */
-	final Queue<Envelope<?>> internalInbox = new LinkedList<>();
+	final Queue<Envelope<?>> internalQueue = new LinkedList<>();
 
 	/**
 	 * Queue to store messages from cells docked on other threads (interthread communication).
 	 */
-	final Queue<Envelope<?>> externalInbox = new MpscLinkedQueue<>();
+	final MpscLinkedQueue<Envelope<?>> externalQueue = new MpscLinkedQueue<>();
 
 	final ActorSystem system;
 
@@ -52,6 +55,9 @@ public class ActorThread extends Thread {
 	 */
 	final int index;
 
+	/**
+	 * How many messages should be processed by a single actor before moving to the next one.
+	 */
 	final int throughput;
 
 	ActorThread(final ActorSystem system, final String name, final int index) {
@@ -79,85 +85,68 @@ public class ActorThread extends Thread {
 
 	private void process() {
 
-		final Queue<Envelope<? extends Directive>> directives = new LinkedList<>();
-		final Queue<Envelope<?>> inbox = new ArrayDeque<>(throughput * 2);
+		final var queue = new LinkedList<Envelope<?>>();
 
 		while (!isInterrupted()) {
 
-			final int moreExternalDirectives = transfer(MAX_VALUE, externalDirectives, directives);
-			final int moreInternalDirectives = transfer(MAX_VALUE, internalDirectives, directives);
+			// move external messages to the temporary queue to avoid contention
+			// move internal messages to the temporary queue to avoid concurrent modification
 
-			drainDirectives(directives);
+			externalQueue.drain(queue::offer);
 
-			final int moreExternalItems = transfer(throughput, externalInbox, inbox);
-			final int moreInternalItems = transfer(throughput, internalInbox, inbox);
+			internalQueue.forEach(queue::offer);
+			internalQueue.clear();
 
-			drainInbox(inbox);
+			deliverMessagesToCells(queue);
 
-			final int moreElementsToProcess = 0
-				| moreExternalDirectives
-				| moreInternalDirectives
-				| moreExternalItems
-				| moreInternalItems;
+			processActiveCells();
 
-			// 0 => no more elements, park this thread
-			// 1 => has more elements, loop continues
-
-			if (moreElementsToProcess == 0) {
+			if (activeCells.isEmpty()) {
 				park(this);
 			}
 		}
 	}
 
-	private void drainDirectives(final Queue<Envelope<? extends Directive>> directives) {
-		drain(directives, this::handleDirective);
-	}
+	private void deliverMessagesToCells(final Queue<Envelope<?>> queue) {
 
-	private void drainInbox(final Queue<Envelope<?>> inbox) {
-		drain(inbox, this::handleMessage);
-	}
+		for (final var envelope : queue) {
 
-	private <X> void drain(final Queue<X> queue, final Consumer<X> handler) {
+			final var target = activeCells.computeIfAbsent(envelope.target, this::findCellFor);
+			final var status = target.deliver(envelope);
 
-		if (queue.isEmpty()) {
-			return;
+			if (status == REJECTED) {
+				// TODO death letter
+			}
 		}
 
-		queue.forEach(handler);
 		queue.clear();
 	}
 
-	private void handleDirective(final Envelope<? extends Directive> envelope) {
-		findCellFor(envelope).receiveDirective(envelope.message);
-	}
+	/**
+	 * Iterates over the active cells and process up to {@link #throughput} messages. When inbox is
+	 * empty after processing completion, the cell becomes inactive and can be removed from the
+	 * active cells map.
+	 */
+	private void processActiveCells() {
 
-	@SuppressWarnings("unchecked")
-	private void handleMessage(final Envelope<?> envelope) {
-		findCellFor(envelope).receiveMessage(envelope);
+		final var iterator = activeCells.values().iterator();
+
+		while (iterator.hasNext()) {
+
+			final var cell = iterator.next();
+			final var status = cell.process(throughput);
+
+			if (status == COMPLETE) {
+				iterator.remove();
+			} else {
+				// more iterations required
+			}
+		}
 	}
 
 	@SuppressWarnings("rawtypes")
-	private ActorCell findCellFor(final Envelope<?> deliverable) {
-		return cells.get(deliverable.target);
-	}
-
-	/**
-	 * @param n how many messages to transfer from one queue to another
-	 * @param source the queue to transfer messages from
-	 * @param target the queue to transfer messages to
-	 * @return True if there are (most likely) messages left in source queue, false otherwise.
-	 */
-	private <M> int transfer(final int n, final Queue<M> source, final Queue<M> target) {
-
-		for (int i = 0; i < n; i++) {
-			final M item = source.poll();
-			if (item == null) {
-				return 0;
-			} else {
-				target.offer(item);
-			}
-		}
-		return 1;
+	private ActorCell findCellFor(final UUID uuid) {
+		return dockedCells.get(uuid);
 	}
 
 	public ActorThread withTerminator(final Runnable terminator) {
@@ -165,39 +154,30 @@ public class ActorThread extends Thread {
 		return this;
 	}
 
-	public <M> void dock(final ActorCell<? extends Actor<M>, M> cell) {
+	public void dock(final ActorCell<? extends Actor<?>, ?> cell) {
 
-		final UUID uuid = cell.getUuid();
-		final boolean overwritten = cells.putIfAbsent(uuid, cell) != null;
+		final var uuid = cell.getUuid();
+		final var overwritten = dockedCells.putIfAbsent(uuid, cell) != null;
 
 		if (overwritten) {
 			throw new IllegalStateException("Cell with ID " + uuid + " already docked on thread " + getName());
 		}
 
-		deliverDirective(new Envelope<>(new ActorInitializationDirective(), ZERO_UUID, uuid));
+		final var init = ActorCell.Directives.INIT;
+		final var envelope = new Envelope<>(init, ZERO_UUID, uuid);
+
+		deliverMessage(envelope);
 	}
 
 	public void discard(final UUID uuid) {
-		cells.remove(uuid);
-	}
-
-	public void deliverDirective(final Envelope<? extends Directive> directive) {
-		if (this == currentThread()) {
-			depositDirective(directive, internalDirectives);
-		} else {
-			depositDirective(directive, externalDirectives);
-		}
-	}
-
-	private <M> void depositDirective(final Envelope<? extends Directive> directive, final Queue<Envelope<? extends Directive>> directives) {
-		wakeUpWhen(directives.add(directive));
+		dockedCells.remove(uuid);
 	}
 
 	public void deliverMessage(final Envelope<?> envelope) {
 		if (this == currentThread()) {
-			depositMessage(envelope, internalInbox);
+			depositMessage(envelope, internalQueue);
 		} else {
-			depositMessage(envelope, externalInbox);
+			depositMessage(envelope, externalQueue);
 		}
 	}
 

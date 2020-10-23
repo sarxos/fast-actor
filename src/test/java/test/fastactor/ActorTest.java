@@ -1,5 +1,7 @@
 package test.fastactor;
 
+import static org.awaitility.Awaitility.await;
+
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -90,5 +92,48 @@ public class ActorTest {
 		system.actorOf(Props.create(TestActor::new));
 
 		stopped.get(500, TimeUnit.MILLISECONDS);
+	}
+
+	@Test
+	public void test_stopByContext() throws Exception {
+
+		final var system = ActorSystem.create("xyz");
+
+		class TestActor extends Actor<Integer> {
+
+			@Override
+			public void receive(final Integer number) {
+				// do nothing
+			}
+
+			@Override
+			public void preStart() {
+				context().stop();
+			}
+		}
+
+		final ActorRef ref = system.actorOf(Props.create(TestActor::new));
+
+		await().until(() -> !system.cells
+			.containsKey(ref.uuid));
+
+		await().until(() -> !system.pools
+			.values()
+			.stream()
+			.flatMap(pool -> pool.threads.stream())
+			.flatMap(thread -> thread.dockedCells.keySet().stream())
+			.filter(ref.uuid::equals)
+			.findAny()
+			.isPresent());
+
+		await().until(() -> !system.pools
+			.values()
+			.stream()
+			.flatMap(pool -> pool.threads.stream())
+			.flatMap(thread -> thread.activeCells.keySet().stream())
+			.filter(ref.uuid::equals)
+			.findAny()
+			.isPresent());
+
 	}
 }

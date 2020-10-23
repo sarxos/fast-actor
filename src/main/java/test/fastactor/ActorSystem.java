@@ -1,5 +1,6 @@
 package test.fastactor;
 
+import static test.fastactor.ActorRef.noSender;
 import static test.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
 
 import java.util.Map;
@@ -15,8 +16,8 @@ public class ActorSystem {
 
 	private static final int DEFAULT_THROUGHPUT = 10;
 
-	private final Map<String, ActorThreadPool> pools = new ConcurrentHashMap<>();
-	private final Map<UUID, DockingInfo> cells = new ConcurrentHashMap<>();
+	final Map<String, ActorThreadPool> pools = new ConcurrentHashMap<>();
+	final Map<UUID, DockingInfo> cells = new ConcurrentHashMap<>();
 
 	final String name;
 	final int throughput;
@@ -28,7 +29,7 @@ public class ActorSystem {
 		this.name = name;
 		this.throughput = throughput;
 
-		registerThreadPool(new ActorThreadPool(this, DEFAULT_THREAD_POOL_NAME, 16));
+		addPool(new ActorThreadPool(this, DEFAULT_THREAD_POOL_NAME, 16));
 
 		this.hardwired = new HardwiredActors();
 	}
@@ -42,7 +43,7 @@ public class ActorSystem {
 		return name;
 	}
 
-	public boolean registerThreadPool(final ActorThreadPool pool) {
+	public boolean addPool(final ActorThreadPool pool) {
 		return pools.putIfAbsent(pool.getName(), pool) == null;
 	}
 
@@ -54,17 +55,18 @@ public class ActorSystem {
 	 * @param props the actor {@link Props}
 	 * @return New {@link ActorRef} which should be used to communicate with the actor
 	 */
-	public <A extends Actor<M>, M> ActorRef<M> actorOf(final Props<A> props) {
+	public <A extends Actor<M>, M> ActorRef actorOf(final Props<A> props) {
 		return actorOf(props, hardwired.user.uuid);
 	}
 
-	<A extends Actor<M>, M> ActorRef<M> actorOf(final Props<A> props, final UUID parent) {
+	<A extends Actor<M>, M> ActorRef actorOf(final Props<A> props, final UUID parent) {
 
-		final ActorCell<A, M> cell = new ActorCell<A, M>(this, props, parent);
-		final ActorThreadPool pool = getPoolFor(props).orElseThrow(poolNotFoundError(props));
-		final DockingInfo details = pool.dock(cell);
-		final UUID uuid = cell.getUuid();
-		final boolean overwritten = cells.putIfAbsent(uuid, details) != null;
+		final var cell = new ActorCell<A, M>(this, props, parent);
+		final var pool = getPoolFor(props).orElseThrow(poolNotFoundError(props));
+		final var info = pool.dock(cell);
+		final var uuid = cell.getUuid();
+
+		final var overwritten = cells.putIfAbsent(uuid, info) != null;
 
 		if (overwritten) {
 			throw new IllegalStateException("Cell " + uuid + " docking details were already present in map");
@@ -73,19 +75,22 @@ public class ActorSystem {
 		return cell.self();
 	}
 
-	void discard(final UUID uuid, final String poolName) {
+	void discard(final UUID uuid) {
 
-		final DockingInfo info = getDockingInfoFor(uuid).orElseThrow(cellNotFoundError(uuid));
-		final int threadIndex = info.threadIndex;
+		final var info = getDockingInfoFor(uuid).orElseThrow(cellNotFoundError(uuid));
+		final var threadIndex = info.threadIndex;
+		final var threadPool = info.pool;
 
-		getPoolFor(poolName)
-			.orElseThrow(poolNotFoundError(poolName))
-			.discard(uuid, threadIndex);
+		threadPool.discard(uuid, threadIndex);
 
 		cells.remove(uuid);
 	}
 
-	<M> void tell(final M message, final UUID sender, final UUID target) {
+	public <M> void tell(final M message, final ActorRef target, final ActorRef sender) {
+		tell(message, target.uuid, sender.uuid);
+	}
+
+	<M> void tell(final M message, final UUID target, final UUID sender) {
 
 		final Envelope<M> envelope = new Envelope<M>(message, sender, target);
 		final DockingInfo targetInfo = getDockingInfoFor(target).orElseThrow(cellNotFoundError(target));
@@ -93,6 +98,16 @@ public class ActorSystem {
 		targetInfo
 			.getPool()
 			.deliver(envelope, targetInfo);
+	}
+
+	/**
+	 * Stops the actor pointed by the {@link ActorRef} provided in the argument. This is
+	 * asynchronous operation and therefore actor may be still alive when this method completes.
+	 *
+	 * @param target the target to be stopped
+	 */
+	public void stop(final ActorRef target) {
+		tell(ActorCell.Directives.STOP, target, noSender());
 	}
 
 	private Optional<DockingInfo> getDockingInfoFor(final UUID uuid) {
@@ -120,11 +135,11 @@ public class ActorSystem {
 	}
 
 	class HardwiredActors {
-		final ActorRef<Object> root = actorOf(Props.create(RootActor::new), (UUID) null);
-		final ActorRef<Object> user = actorOf(Props.create(UserActor::new), root.uuid);
-		final ActorRef<Object> temp = actorOf(Props.create(TempActor::new), root.uuid);
-		final ActorRef<Object> system = actorOf(Props.create(SystemActor::new), root.uuid);
-		final ActorRef<Object> deathLetter = actorOf(Props.create(DeathLetter::new), root.uuid);
+		final ActorRef root = actorOf(Props.create(RootActor::new), (UUID) null);
+		final ActorRef user = actorOf(Props.create(UserActor::new), root.uuid);
+		final ActorRef temp = actorOf(Props.create(TempActor::new), root.uuid);
+		final ActorRef system = actorOf(Props.create(SystemActor::new), root.uuid);
+		final ActorRef deathLetter = actorOf(Props.create(DeathLetter::new), root.uuid);
 	}
 }
 
