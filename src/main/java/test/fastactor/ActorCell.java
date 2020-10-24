@@ -2,16 +2,20 @@ package test.fastactor;
 
 import static test.fastactor.ActorCell.DeliveryStatus.ACCEPTED;
 import static test.fastactor.ActorCell.DeliveryStatus.REJECTED;
-import static test.fastactor.ActorCell.Directives.STOP;
+import static test.fastactor.ActorCell.Directives.DISCARD_CELL;
+import static test.fastactor.ActorCell.Directives.STOP_CELL;
 import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 import static test.fastactor.ActorCell.ProcessingStatus.CONTINUE;
+import static test.fastactor.ActorRef.noSender;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -29,18 +33,18 @@ import test.fastactor.dsl.Base;
 public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
 	static class Directives {
-		final static Directive INIT = new ActorInitializationDirective();
-		final static Directive STOP = new ActorStopDirective();
-		final static Directive CLEANUP = new ActorCellCleanupDirective();
+		final static Directive INIT_ACTOR = new ActorInitializationDirective();
+		final static Directive START_CELL = new ActorCellStartDirective();
+		final static Directive STOP_CELL = new ActorStopDirective();
+		final static Directive DISCARD_CELL = new ActorDiscardDirective();
 	}
 
 	static final Random RANDOM = new Random(System.currentTimeMillis());
 	static final ThreadLocal<ActorContext<?>> CONTEXT = new ThreadLocal<>();
 
-	private final Deque<ActorRef> children = new ArrayDeque<>(0);
+	private final Set<UUID> children = new LinkedHashSet<>();
 	private final Deque<Consumer<M>> behaviours = new ArrayDeque<>(0);
 	private final UUID uuid = new UUID(RANDOM.nextLong(), RANDOM.nextLong());
-
 	private final Queue<Envelope<?>> inbox = new LinkedList<>();
 
 	private final ActorSystem system;
@@ -52,11 +56,24 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	private Actor<M> actor;
 	private ActorRef sender;
 
-	public ActorCell(final ActorSystem system, final Props<A> props, final UUID parent) {
+	ActorCell(final ActorSystem system, final Props<A> props, final UUID parent) {
 		this.system = system;
 		this.props = props;
 		this.parent = new ActorRef(system, parent);
 		this.self = new ActorRef(system, uuid);
+	}
+
+	ActorRef initialize() {
+		if (parent.uuid != null) {
+			// TODO create parent-child link
+		}
+		return self;
+	}
+
+	void start() {
+		stopped = false;
+		invokeActorConstructor();
+		invokeActorPreStart();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -71,7 +88,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	@Override
 	public <P extends Actor<X>, X> ActorRef actorOf(final Props<P> props) {
 		final ActorRef child = system.actorOf(props, this.uuid);
-		children.add(child);
+		children.add(child.uuid);
 		return child;
 	}
 
@@ -81,6 +98,10 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 			invokeActorPreStart();
 		}
 		return actor;
+	}
+
+	Set<UUID> children() {
+		return children;
 	}
 
 	boolean isActorInitialized() {
@@ -116,19 +137,19 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	public DeliveryStatus deliver(final Envelope<?> envelope) {
 		return withSender(envelope.sender, () -> {
 			if (envelope.message instanceof Directive) {
-				return receiveDirective(envelope);
+				return deliverDirective(envelope);
 			} else {
-				return receiveMessage(envelope);
+				return deliverMessage(envelope);
 			}
 		});
 	}
 
-	private DeliveryStatus receiveDirective(final Envelope<?> envelope) {
+	private DeliveryStatus deliverDirective(final Envelope<?> envelope) {
 
 		final var directive = envelope.asDirective().message;
 
 		if (directive.mode() == ExecutionMode.RUN_IMMEDIATELY) {
-			directive.executeOn(this);
+			directive.approved(this);
 		} else {
 			inbox.offer(envelope);
 		}
@@ -136,12 +157,11 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		return ACCEPTED;
 	}
 
-	private DeliveryStatus receiveMessage(final Envelope<?> envelope) {
+	private DeliveryStatus deliverMessage(final Envelope<?> envelope) {
 
 		if (stopped) {
 			return REJECTED;
 		}
-
 		if (inbox.offer(envelope)) {
 			return ACCEPTED;
 		}
@@ -155,7 +175,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	}
 
 	/**
-	 * @param throughput how many items in inbox should be processsed
+	 * @param throughput how many items in inbox should be processed
 	 * @return Return true if all items in inbox has been processed, false otherwise
 	 */
 	public ProcessingStatus process(final int throughput) {
@@ -165,7 +185,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		}
 
 		for (int i = 0; i < throughput; i++) {
-			if (processInboxItem(inbox.poll())) {
+			if (processItem(inbox.poll())) {
 				return COMPLETE;
 			}
 		}
@@ -174,28 +194,25 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	}
 
 	@SuppressWarnings("unchecked")
-	private boolean processInboxItem(final Envelope<?> envelope) {
+	private boolean processItem(final Envelope<?> envelope) {
 
 		if (envelope == null) {
 			return true; // last message
 		}
 
-		setCurrentSender(envelope);
+		return withSender(envelope.sender, () -> {
 
-		if (envelope.message instanceof Directive) {
-			envelope.asDirective().message.executeOn(this);
-		} else {
-			Optional
-				.ofNullable(behaviours.peek())
-				.orElse(getOrCreateActor()::receive)
-				.accept((M) envelope.message);
-		}
+			if (envelope.message instanceof Directive) {
+				envelope.asDirective().message.approved(this);
+			} else {
+				Optional
+					.ofNullable(behaviours.peek())
+					.orElse(getOrCreateActor()::receive)
+					.accept((M) envelope.message);
+			}
 
-		return false;
-	}
-
-	private void setCurrentSender(final Envelope<?> envelope) {
-		this.sender = new ActorRef(system, envelope.sender);
+			return true;
+		});
 	}
 
 	@Override
@@ -224,9 +241,16 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		inbox.clear();
 
 		if (hasChildren()) {
-			system.actorOf(Props.create(() -> new ActorStopCoordinator(self(), children())));
+
+			// copy children into new array so we do not leak the cell context to the outside
+			// entities (in this case a reference to the children set)
+
+			final var uuids = children.toArray(UUID[]::new);
+			final var props = Props.create(() -> new ActorStopCoordinator(self, uuids));
+
+			system.actorOf(props);
 		} else {
-			system.tell(STOP, self, self);
+			self.tell(Directives.DISCARD_CELL, self);
 		}
 	}
 
@@ -257,11 +281,6 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	}
 
 	@Override
-	public Deque<ActorRef> children() {
-		return children;
-	}
-
-	@Override
 	public ActorRef sender() {
 		return sender;
 	}
@@ -282,31 +301,31 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
 class ActorStopCoordinator extends Actor<ActorStopDirective.Ack> implements Base {
 
-	private static final Directive CLEANUP = ActorCell.Directives.CLEANUP;
-
 	private final ActorRef parent;
-	private final Queue<ActorRef> children;
+	private final UUID[] uuids;
 	private int howManyAlive;
 
-	public ActorStopCoordinator(final ActorRef parent, final Queue<ActorRef> children) {
+	public ActorStopCoordinator(final ActorRef parent, final UUID[] uuid) {
 		this.parent = parent;
-		this.children = children;
-		this.howManyAlive = children.size();
+		this.uuids = uuid;
+		this.howManyAlive = uuid.length;
 	}
 
 	@Override
 	public void preStart() {
-		children.forEach(this::tellActorToStop);
+		for (final UUID uuid : uuids) {
+			tellActorToStop(uuid);
+		}
 	}
 
-	private void tellActorToStop(final ActorRef child) {
-		tell(STOP, child);
+	private void tellActorToStop(final UUID child) {
+		context().system().tell(STOP_CELL, child, parent.uuid);
 	}
 
 	@Override
 	public void receive(final ActorStopDirective.Ack ack) {
 		if (allChildrenDied()) {
-			tell(CLEANUP, parent, parent);
+			tell(DISCARD_CELL, parent, noSender());
 			stop();
 		}
 	}
@@ -319,7 +338,7 @@ class ActorStopCoordinator extends Actor<ActorStopDirective.Ack> implements Base
 class ActorStopDirective implements Directive {
 
 	@Override
-	public void executeOn(final ActorCell<?, ?> cell) {
+	public void approved(final ActorCell<? extends Actor<?>, ?> cell) {
 
 		final var sender = cell.sender();
 		final var self = cell.self();
@@ -341,10 +360,17 @@ class ActorStopDirective implements Directive {
  * {@link Actor#preStart()}.
  */
 class ActorInitializationDirective implements Directive {
-
-	@Override
-	public void executeOn(final ActorCell<?, ?> cell) {
+	public @Override void approved(final ActorCell<?, ?> cell) {
 		cell.getOrCreateActor();
+	}
+}
+
+/**
+ * Mark cell as initialized and start accepting messages.
+ */
+class ActorCellStartDirective implements Directive {
+	public @Override void approved(final ActorCell<?, ?> cell) {
+		cell.start();
 	}
 }
 
@@ -353,10 +379,10 @@ class ActorInitializationDirective implements Directive {
  * from the system and the thread pool where cell is docked. Make sure to use this directive
  * whenever cell is no longer needed and can be removed.
  */
-class ActorCellCleanupDirective implements Directive {
+class ActorDiscardDirective implements Directive {
 
 	@Override
-	public void executeOn(final ActorCell<?, ?> cell) {
+	public void approved(final ActorCell<? extends Actor<?>, ?> cell) {
 		final var system = cell.system();
 		final var uuid = cell.getUuid();
 		system.discard(uuid);

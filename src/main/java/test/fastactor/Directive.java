@@ -1,13 +1,21 @@
 package test.fastactor;
 
 /**
- * A directive is a piece of code executed on the {@link ActorCell} by the {@link Thread} where
- * {@link Actor} is docked.
+ * A directive is a very special kind of message. Existing {@link ActorCell} cannot rejected a
+ * {@link Directive}. It can, however, be rejected when {@link ActorCell} does not exist or is not
+ * yet docked on the {@link ActorThread}. Every {@link Directive} can define a piece of code to be
+ * executed in the context of the {@link ActorCell}. The execution is done by the very same
+ * {@link ActorThread} where the target {@link ActorCell} is docked on.
  *
  * @author Bartosz Firyn (sarxos)
  */
 public interface Directive {
 
+	/**
+	 * A execution mode defines how a {@link Directive} should be executed when approved by the
+	 * {@link ActorCell}. The execution can be done in two ways. It can either be executed
+	 * immediately, or it can wait in the inbox queue for its own turn to be processed.
+	 */
 	public enum ExecutionMode {
 
 		/**
@@ -27,7 +35,17 @@ public interface Directive {
 	 * 
 	 * @param cell the {@link ActorCell} to execute this directive on
 	 */
-	void executeOn(final ActorCell<?, ?> cell);
+	default void approved(final ActorCell<? extends Actor<?>, ?> cell) {
+		// do nothing by default, but feel free to override
+	}
+
+	/**
+	 * Executed when directive is rejected by the {@link ActorCell} or the {@link ActorCell} has not
+	 * been found.
+	 */
+	default void rejected() {
+		// do nothing by default, but feel free to override
+	}
 
 	/**
 	 * A {@link Directive} can be executed immediately or in the order of incoming messages. The

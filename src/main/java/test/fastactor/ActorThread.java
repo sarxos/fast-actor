@@ -99,6 +99,8 @@ public class ActorThread extends Thread {
 
 			deliverMessagesToCells(queue);
 
+			queue.clear();
+
 			processActiveCells();
 
 			if (activeCells.isEmpty()) {
@@ -108,18 +110,12 @@ public class ActorThread extends Thread {
 	}
 
 	private void deliverMessagesToCells(final Queue<Envelope<?>> queue) {
-
 		for (final var envelope : queue) {
-
 			final var target = activeCells.computeIfAbsent(envelope.target, this::findCellFor);
-			final var status = target.deliver(envelope);
-
-			if (status == REJECTED) {
-				// TODO death letter
+			if (target == null || target.deliver(envelope) == REJECTED) {
+				system.forwardToDeathLetter(envelope);
 			}
 		}
-
-		queue.clear();
 	}
 
 	/**
@@ -163,7 +159,7 @@ public class ActorThread extends Thread {
 			throw new IllegalStateException("Cell with ID " + uuid + " already docked on thread " + getName());
 		}
 
-		final var init = ActorCell.Directives.INIT;
+		final var init = ActorCell.Directives.START_CELL;
 		final var envelope = new Envelope<>(init, ZERO_UUID, uuid);
 
 		deliverMessage(envelope);

@@ -19,6 +19,11 @@ public class ActorRef {
 		return NO_REF;
 	}
 
+	@Override
+	public String toString() {
+		return uuid + "@" + system.getName();
+	}
+
 	public void tell(final Object message) {
 		tell(message, noSender());
 	}

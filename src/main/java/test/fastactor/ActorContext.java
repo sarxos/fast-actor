@@ -1,6 +1,5 @@
 package test.fastactor;
 
-import java.util.Deque;
 import java.util.function.Consumer;
 
 
@@ -47,11 +46,6 @@ public interface ActorContext<M> {
 	 * @return The {@link ActorRef} which can be used to send message to newly created actor
 	 */
 	public <A extends Actor<X>, X> ActorRef actorOf(final Props<A> props);
-
-	/**
-	 * @return List of children's {@link ActorRef}
-	 */
-	Deque<ActorRef> children();
 
 	/**
 	 * @param behaviour the reference to new message {@link Consumer}

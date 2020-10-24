@@ -1,5 +1,6 @@
 package test.fastactor;
 
+import static test.fastactor.ActorCell.Directives.STOP_CELL;
 import static test.fastactor.ActorRef.noSender;
 import static test.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
 
@@ -22,7 +23,7 @@ public class ActorSystem {
 	final String name;
 	final int throughput;
 
-	final HardwiredActors hardwired;
+	final InternalActors internals;
 
 	public ActorSystem(final String name, final int throughput) {
 
@@ -31,7 +32,7 @@ public class ActorSystem {
 
 		addPool(new ActorThreadPool(this, DEFAULT_THREAD_POOL_NAME, 16));
 
-		this.hardwired = new HardwiredActors();
+		this.internals = new InternalActors();
 	}
 
 	public static ActorSystem create(final String name) {
@@ -56,23 +57,36 @@ public class ActorSystem {
 	 * @return New {@link ActorRef} which should be used to communicate with the actor
 	 */
 	public <A extends Actor<M>, M> ActorRef actorOf(final Props<A> props) {
-		return actorOf(props, hardwired.user.uuid);
+		return actorOf(props, internals.user.uuid);
 	}
 
 	<A extends Actor<M>, M> ActorRef actorOf(final Props<A> props, final UUID parent) {
 
-		final var cell = new ActorCell<A, M>(this, props, parent);
 		final var pool = getPoolFor(props).orElseThrow(poolNotFoundError(props));
-		final var info = pool.dock(cell);
-		final var uuid = cell.getUuid();
 
-		final var overwritten = cells.putIfAbsent(uuid, info) != null;
+		do {
 
-		if (overwritten) {
-			throw new IllegalStateException("Cell " + uuid + " docking details were already present in map");
-		}
+			final var cell = new ActorCell<A, M>(this, props, parent);
+			final var uuid = cell.getUuid();
 
-		return cell.self();
+			// Since random numbers generator used to create unique cell IDs is not synchronized,
+			// there is a very low chance a cell to be given the same UUID as some other existing
+			// one. To prevent having two cells with the same UUID in the system we need to repeat
+			// creation process again until we are happy with the result.
+
+			if (cells.containsKey(uuid)) {
+				continue;
+			}
+
+			final var info = pool.dock(cell);
+
+			if (cells.putIfAbsent(uuid, info) != null) {
+				pool.discard(uuid, info.threadIndex);
+			} else {
+				return cell.initialize();
+			}
+
+		} while (true);
 	}
 
 	void discard(final UUID uuid) {
@@ -100,6 +114,16 @@ public class ActorSystem {
 			.deliver(envelope, targetInfo);
 	}
 
+	<M> void forward(final Envelope<M> envelope, final UUID newTarget) {
+		final M message = envelope.message;
+		final UUID sender = envelope.sender;
+		tell(message, newTarget, sender);
+	}
+
+	<M> void forwardToDeathLetter(final Envelope<M> envelope) {
+		forward(envelope, internals.deathLetter.uuid);
+	}
+
 	/**
 	 * Stops the actor pointed by the {@link ActorRef} provided in the argument. This is
 	 * asynchronous operation and therefore actor may be still alive when this method completes.
@@ -107,7 +131,7 @@ public class ActorSystem {
 	 * @param target the target to be stopped
 	 */
 	public void stop(final ActorRef target) {
-		tell(ActorCell.Directives.STOP, target, noSender());
+		tell(STOP_CELL, target, noSender());
 	}
 
 	private Optional<DockingInfo> getDockingInfoFor(final UUID uuid) {
@@ -134,7 +158,7 @@ public class ActorSystem {
 		return () -> new IllegalStateException("Cell with UUID " + uuid + " has not been found in the system");
 	}
 
-	class HardwiredActors {
+	class InternalActors {
 		final ActorRef root = actorOf(Props.create(RootActor::new), (UUID) null);
 		final ActorRef user = actorOf(Props.create(UserActor::new), root.uuid);
 		final ActorRef temp = actorOf(Props.create(TempActor::new), root.uuid);
