@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public class ActorRef {
 
-	public static final ActorRef NO_REF = new ActorRef(null, null);
+	public static final ActorRef NO_REF = new ActorRef(null, ActorSystem.ZERO);
 
 	final ActorSystem system;
 	final UUID uuid;

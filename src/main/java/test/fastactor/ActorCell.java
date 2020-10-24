@@ -2,11 +2,12 @@ package test.fastactor;
 
 import static test.fastactor.ActorCell.DeliveryStatus.ACCEPTED;
 import static test.fastactor.ActorCell.DeliveryStatus.REJECTED;
-import static test.fastactor.ActorCell.Directives.DISCARD_CELL;
-import static test.fastactor.ActorCell.Directives.STOP_CELL;
 import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 import static test.fastactor.ActorCell.ProcessingStatus.CONTINUE;
 import static test.fastactor.ActorRef.noSender;
+import static test.fastactor.ActorSystem.ZERO;
+import static test.fastactor.Directives.Discard;
+import static test.fastactor.Directives.Stop;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -21,6 +22,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import test.fastactor.Directive.ExecutionMode;
+import test.fastactor.Directives.Stop;
 import test.fastactor.dsl.Base;
 
 
@@ -31,13 +33,6 @@ import test.fastactor.dsl.Base;
  * @param <M> the message type
  */
 public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
-
-	static class Directives {
-		final static Directive INIT_ACTOR = new ActorInitializationDirective();
-		final static Directive START_CELL = new ActorCellStartDirective();
-		final static Directive STOP_CELL = new ActorStopDirective();
-		final static Directive DISCARD_CELL = new ActorDiscardDirective();
-	}
 
 	static final Random RANDOM = new Random(System.currentTimeMillis());
 	static final ThreadLocal<ActorContext<?>> CONTEXT = new ThreadLocal<>();
@@ -52,26 +47,25 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	private final ActorRef parent;
 	private final ActorRef self;
 
-	private boolean stopped = false;
+	private boolean started = false;
+	private boolean dead = false;
 	private Actor<M> actor;
 	private ActorRef sender;
 
 	ActorCell(final ActorSystem system, final Props<A> props, final UUID parent) {
 		this.system = system;
 		this.props = props;
-		this.parent = new ActorRef(system, parent);
 		this.self = new ActorRef(system, uuid);
+		this.parent = new ActorRef(system, parent);
 	}
 
-	ActorRef initialize() {
-		if (parent.uuid != null) {
-			// TODO create parent-child link
-		}
+	ActorRef setup() {
+		new CellSetupProtocol(self(), parent()).initiate();
 		return self;
 	}
 
 	void start() {
-		stopped = false;
+		this.started = true;
 		invokeActorConstructor();
 		invokeActorPreStart();
 	}
@@ -158,15 +152,13 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	}
 
 	private DeliveryStatus deliverMessage(final Envelope<?> envelope) {
-
-		if (stopped) {
+		if (dead) {
+			return REJECTED;
+		} else if (inbox.offer(envelope)) {
+			return ACCEPTED;
+		} else {
 			return REJECTED;
 		}
-		if (inbox.offer(envelope)) {
-			return ACCEPTED;
-		}
-
-		return REJECTED;
 	}
 
 	static enum ProcessingStatus {
@@ -180,7 +172,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	 */
 	public ProcessingStatus process(final int throughput) {
 
-		if (stopped) {
+		if (dead || !started) {
 			return COMPLETE;
 		}
 
@@ -236,7 +228,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	@Override
 	public void stop() {
 
-		stopped = true;
+		dead = true;
 		invokeActorPostStop();
 		inbox.clear();
 
@@ -250,7 +242,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
 			system.actorOf(props);
 		} else {
-			self.tell(Directives.DISCARD_CELL, self);
+			self.tell(Discard, self);
 		}
 	}
 
@@ -290,8 +282,12 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		return system;
 	}
 
-	public UUID getUuid() {
+	public UUID uuid() {
 		return uuid;
+	}
+
+	public void reply(final Object message) {
+		sender().tell(message, self());
 	}
 
 	public String getThreadPoolName() {
@@ -299,7 +295,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	}
 }
 
-class ActorStopCoordinator extends Actor<ActorStopDirective.Ack> implements Base {
+class ActorStopCoordinator extends Actor<Stop.Ack> implements Base {
 
 	private final ActorRef parent;
 	private final UUID[] uuids;
@@ -314,18 +310,18 @@ class ActorStopCoordinator extends Actor<ActorStopDirective.Ack> implements Base
 	@Override
 	public void preStart() {
 		for (final UUID uuid : uuids) {
-			tellActorToStop(uuid);
+			tellChildToStop(uuid);
 		}
 	}
 
-	private void tellActorToStop(final UUID child) {
-		context().system().tell(STOP_CELL, child, parent.uuid);
+	private void tellChildToStop(final UUID child) {
+		context().system().tell(Stop, child, parent.uuid);
 	}
 
 	@Override
-	public void receive(final ActorStopDirective.Ack ack) {
+	public void receive(final Stop.Ack ack) {
 		if (allChildrenDied()) {
-			tell(DISCARD_CELL, parent, noSender());
+			tell(Discard, parent, noSender());
 			stop();
 		}
 	}
@@ -335,56 +331,116 @@ class ActorStopCoordinator extends Actor<ActorStopDirective.Ack> implements Base
 	}
 }
 
-class ActorStopDirective implements Directive {
+interface Directives {
+
+	final static Directive Start = new Start();
+	final static Directive Stop = new Stop();
+	final static Directive Discard = new Discard();
+
+	/**
+	 * Mark cell as initialized and start accepting messages.
+	 */
+	class Start implements Directive {
+		public @Override void approved(final ActorCell<?, ?> cell) {
+			cell.start();
+		}
+	}
+
+	/**
+	 * Stop the cell and reply to the sender that it was indeed stopped.
+	 */
+	class Stop implements Directive {
+
+		@Override
+		public void approved(final ActorCell<?, ?> cell) {
+			cell.stop();
+			cell.reply(Ack.Instance);
+		}
+
+		static enum Ack {
+			Instance
+		}
+	}
+
+	/**
+	 * A {@link Directive} to cleanup specified {@link ActorCell}. When executed it will remove the
+	 * cell from the system and the thread pool where cell is docked. Make sure to use this
+	 * directive whenever cell is no longer needed and can be removed.
+	 */
+	class Discard implements Directive {
+
+		@Override
+		public void approved(final ActorCell<?, ?> cell) {
+			final var system = cell.system();
+			final var uuid = cell.uuid();
+			system.discard(uuid);
+		}
+	}
+}
+
+class CellSetupProtocol implements Protocol {
+
+	final ActorRef child;
+	final ActorRef parent;
+
+	public CellSetupProtocol(ActorRef child, ActorRef parent) {
+		this.child = child;
+		this.parent = parent;
+	}
+
+	/**
+	 * From child to parent. Tell parent to add child as its own. When parent approves, the
+	 * {@link AddChildConfirmation} is send to child. When parent already died or did not exist in
+	 * the first place, the {@link Directives#Stop} is send to the child instead.
+	 */
+	final class AddChild implements Directive {
+
+		@Override
+		public void approved(final ActorCell<?, ?> cell) {
+			cell.children().add(child.uuid);
+			child.tell(new AddChildConfirmation(), parent);
+		}
+
+		@Override
+		public void rejected() {
+			child.tell(Directives.Stop, parent);
+		}
+	}
+
+	final class AddChildConfirmation implements Directive {
+
+		@Override
+		public void approved(final ActorCell<?, ?> cell) {
+			cell.start();
+		}
+
+		@Override
+		public void rejected() {
+			parent.tell(new RemoveChild(), child);
+		}
+	}
+
+	final class RemoveChild implements Directive {
+
+		@Override
+		public void approved(final ActorCell<?, ?> cell) {
+			cell.children().remove(child.uuid);
+		}
+	}
+
+	/**
+	 * @return True if parent actor is a root, false otherwise
+	 */
+	private boolean isParentTheRootActor() {
+		return parent.uuid == ZERO;
+	}
 
 	@Override
-	public void approved(final ActorCell<? extends Actor<?>, ?> cell) {
-
-		final var sender = cell.sender();
-		final var self = cell.self();
-
-		// stop the cell and confirm to the sender that we indeed stopped
-
-		cell.stop();
-		sender.tell(Ack.INSTANCE, self);
-	}
-
-	static enum Ack {
-		INSTANCE
-	}
-}
-
-/**
- * A {@link Directive} to initialize {@link Actor} in the specified {@link ActorCell}. When executed
- * it will invoke {@link ActorCreator} to create new actor instance (if not yet created) and invoke
- * {@link Actor#preStart()}.
- */
-class ActorInitializationDirective implements Directive {
-	public @Override void approved(final ActorCell<?, ?> cell) {
-		cell.getOrCreateActor();
-	}
-}
-
-/**
- * Mark cell as initialized and start accepting messages.
- */
-class ActorCellStartDirective implements Directive {
-	public @Override void approved(final ActorCell<?, ?> cell) {
-		cell.start();
-	}
-}
-
-/**
- * A {@link Directive} to cleanup specified {@link ActorCell}. When executed it will remove the cell
- * from the system and the thread pool where cell is docked. Make sure to use this directive
- * whenever cell is no longer needed and can be removed.
- */
-class ActorDiscardDirective implements Directive {
-
-	@Override
-	public void approved(final ActorCell<? extends Actor<?>, ?> cell) {
-		final var system = cell.system();
-		final var uuid = cell.getUuid();
-		system.discard(uuid);
+	public void initiate() {
+		if (isParentTheRootActor()) {
+			child.tell(Directives.Start, child);
+		} else {
+			parent.tell(new AddChild(), child);
+		}
 	}
 }

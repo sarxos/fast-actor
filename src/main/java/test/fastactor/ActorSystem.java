@@ -1,6 +1,5 @@
 package test.fastactor;
 
-import static test.fastactor.ActorCell.Directives.STOP_CELL;
 import static test.fastactor.ActorRef.noSender;
 import static test.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
 
@@ -14,6 +13,8 @@ import test.fastactor.ActorThreadPool.DockingInfo;
 
 
 public class ActorSystem {
+
+	public static final UUID ZERO = new UUID(0, 0);
 
 	private static final int DEFAULT_THROUGHPUT = 10;
 
@@ -67,7 +68,7 @@ public class ActorSystem {
 		do {
 
 			final var cell = new ActorCell<A, M>(this, props, parent);
-			final var uuid = cell.getUuid();
+			final var uuid = cell.uuid();
 
 			// Since random numbers generator used to create unique cell IDs is not synchronized,
 			// there is a very low chance a cell to be given the same UUID as some other existing
@@ -83,7 +84,7 @@ public class ActorSystem {
 			if (cells.putIfAbsent(uuid, info) != null) {
 				pool.discard(uuid, info.threadIndex);
 			} else {
-				return cell.initialize();
+				return cell.setup();
 			}
 
 		} while (true);
@@ -131,7 +132,7 @@ public class ActorSystem {
 	 * @param target the target to be stopped
 	 */
 	public void stop(final ActorRef target) {
-		tell(STOP_CELL, target, noSender());
+		tell(Directives.Stop, target, noSender());
 	}
 
 	private Optional<DockingInfo> getDockingInfoFor(final UUID uuid) {
@@ -159,7 +160,7 @@ public class ActorSystem {
 	}
 
 	class InternalActors {
-		final ActorRef root = actorOf(Props.create(RootActor::new), (UUID) null);
+		final ActorRef root = actorOf(Props.create(RootActor::new), ZERO);
 		final ActorRef user = actorOf(Props.create(UserActor::new), root.uuid);
 		final ActorRef temp = actorOf(Props.create(TempActor::new), root.uuid);
 		final ActorRef system = actorOf(Props.create(SystemActor::new), root.uuid);

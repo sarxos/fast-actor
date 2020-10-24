@@ -134,6 +134,5 @@ public class ActorTest {
 			.filter(ref.uuid::equals)
 			.findAny()
 			.isPresent());
-
 	}
 }

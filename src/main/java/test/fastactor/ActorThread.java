@@ -20,15 +20,14 @@ import org.jctools.queues.MpscLinkedQueue;
 
 public class ActorThread extends Thread {
 
-	private static final UUID ZERO_UUID = new UUID(0, 0);
-
 	/**
 	 * Mapping between cell {@link UUID} and corresponding {@link ActorCell} instance.
 	 */
 	final Map<UUID, ActorCell<? extends Actor<?>, ?>> dockedCells = new ConcurrentHashMap<>();
 
 	/**
-	 * The active cells are the ones which have at least one message in the inbox.
+	 * The active cells are the ones which have at least one message in the inbox. This map is not
+	 * thread-safe, so please do not use outside the {@link ActorThread} it's referenced on.
 	 */
 	final Map<UUID, ActorCell<? extends Actor<?>, ?>> active = new HashMap<>();
 
@@ -159,17 +158,12 @@ public class ActorThread extends Thread {
 
 	public void dock(final ActorCell<? extends Actor<?>, ?> cell) {
 
-		final var uuid = cell.getUuid();
+		final var uuid = cell.uuid();
 		final var overwritten = dockedCells.putIfAbsent(uuid, cell) != null;
 
 		if (overwritten) {
 			throw new IllegalStateException("Cell with ID " + uuid + " already docked on thread " + getName());
 		}
-
-		final var init = ActorCell.Directives.START_CELL;
-		final var envelope = new Envelope<>(init, ZERO_UUID, uuid);
-
-		deposit(envelope);
 	}
 
 	public void discard(final UUID uuid) {
