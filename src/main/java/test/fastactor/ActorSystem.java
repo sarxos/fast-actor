@@ -111,7 +111,7 @@ public class ActorSystem {
 
 		targetInfo
 			.getPool()
-			.deliver(envelope, targetInfo);
+			.deposit(envelope, targetInfo);
 	}
 
 	<M> void forward(final Envelope<M> envelope, final UUID newTarget) {

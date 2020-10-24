@@ -130,7 +130,7 @@ public class ActorTest {
 			.values()
 			.stream()
 			.flatMap(pool -> pool.threads.stream())
-			.flatMap(thread -> thread.activeCells.keySet().stream())
+			.flatMap(thread -> thread.active.keySet().stream())
 			.filter(ref.uuid::equals)
 			.findAny()
 			.isPresent());

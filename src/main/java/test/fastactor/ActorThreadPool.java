@@ -69,8 +69,8 @@ public class ActorThreadPool {
 		threadAt(threadIndex).discard(uuid);
 	}
 
-	public <M> void deliver(final Envelope<M> envelope, final DockingInfo info) {
-		threadAt(info.threadIndex).deliverMessage(envelope);
+	public <M> void deposit(final Envelope<M> envelope, final DockingInfo info) {
+		threadAt(info.threadIndex).deposit(envelope);
 	}
 
 	private ActorThread threadAt(final int threadIndex) {

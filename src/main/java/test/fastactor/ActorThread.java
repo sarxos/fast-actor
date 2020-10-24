@@ -30,7 +30,7 @@ public class ActorThread extends Thread {
 	/**
 	 * The active cells are the ones which have at least one message in the inbox.
 	 */
-	final Map<UUID, ActorCell<? extends Actor<?>, ?>> activeCells = new HashMap<>();
+	final Map<UUID, ActorCell<? extends Actor<?>, ?>> active = new HashMap<>();
 
 	/**
 	 * {@link Runnable}s which will be run after this {@link Thread} is completed.
@@ -97,22 +97,29 @@ public class ActorThread extends Thread {
 			internalQueue.forEach(queue::offer);
 			internalQueue.clear();
 
-			deliverMessagesToCells(queue);
+			deliver(queue);
 
 			queue.clear();
 
 			processActiveCells();
 
-			if (activeCells.isEmpty()) {
+			if (active.isEmpty()) {
 				park(this);
 			}
 		}
 	}
 
-	private void deliverMessagesToCells(final Queue<Envelope<?>> queue) {
+	private void deliver(final Queue<Envelope<?>> queue) {
 		for (final var envelope : queue) {
-			final var target = activeCells.computeIfAbsent(envelope.target, this::findCellFor);
-			if (target == null || target.deliver(envelope) == REJECTED) {
+			deliver(envelope, active.computeIfAbsent(envelope.target, this::find));
+		}
+	}
+
+	private void deliver(final Envelope<?> envelope, final ActorCell<?, ?> target) {
+		if (target == null || target.deliver(envelope) == REJECTED) {
+			if (envelope.message instanceof Directive) {
+				((Directive) envelope.message).rejected();
+			} else {
 				system.forwardToDeathLetter(envelope);
 			}
 		}
@@ -125,7 +132,7 @@ public class ActorThread extends Thread {
 	 */
 	private void processActiveCells() {
 
-		final var iterator = activeCells.values().iterator();
+		final var iterator = active.values().iterator();
 
 		while (iterator.hasNext()) {
 
@@ -141,7 +148,7 @@ public class ActorThread extends Thread {
 	}
 
 	@SuppressWarnings("rawtypes")
-	private ActorCell findCellFor(final UUID uuid) {
+	private ActorCell find(final UUID uuid) {
 		return dockedCells.get(uuid);
 	}
 
@@ -162,22 +169,22 @@ public class ActorThread extends Thread {
 		final var init = ActorCell.Directives.START_CELL;
 		final var envelope = new Envelope<>(init, ZERO_UUID, uuid);
 
-		deliverMessage(envelope);
+		deposit(envelope);
 	}
 
 	public void discard(final UUID uuid) {
 		dockedCells.remove(uuid);
 	}
 
-	public void deliverMessage(final Envelope<?> envelope) {
+	public void deposit(final Envelope<?> envelope) {
 		if (this == currentThread()) {
-			depositMessage(envelope, internalQueue);
+			deposit(envelope, internalQueue);
 		} else {
-			depositMessage(envelope, externalQueue);
+			deposit(envelope, externalQueue);
 		}
 	}
 
-	private void depositMessage(final Envelope<?> envelope, final Queue<Envelope<?>> inbox) {
+	private void deposit(final Envelope<?> envelope, final Queue<Envelope<?>> inbox) {
 		wakeUpWhen(inbox.add(envelope));
 	}
 
