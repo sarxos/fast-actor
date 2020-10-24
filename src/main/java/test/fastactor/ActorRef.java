@@ -1,16 +1,13 @@
 package test.fastactor;
 
-import java.util.UUID;
-
-
 public class ActorRef {
 
 	public static final ActorRef NO_REF = new ActorRef(null, ActorSystem.ZERO);
 
 	final ActorSystem system;
-	final UUID uuid;
+	final long uuid;
 
-	ActorRef(final ActorSystem system, final UUID uuid) {
+	ActorRef(final ActorSystem system, final long uuid) {
 		this.system = system;
 		this.uuid = uuid;
 	}

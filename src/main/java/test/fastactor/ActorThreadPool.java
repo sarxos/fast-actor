@@ -6,7 +6,6 @@ import static java.util.stream.Collectors.toCollection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.stream.IntStream;
 
@@ -65,7 +64,7 @@ public class ActorThreadPool {
 		return new DockingInfo(this, threadIndex);
 	}
 
-	public void discard(final UUID uuid, final int threadIndex) {
+	public void discard(final long uuid, final int threadIndex) {
 		threadAt(threadIndex).discard(uuid);
 	}
 

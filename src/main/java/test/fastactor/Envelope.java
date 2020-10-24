@@ -1,8 +1,5 @@
 package test.fastactor;
 
-import java.util.UUID;
-
-
 public class Envelope<M> {
 
 	/**
@@ -11,16 +8,16 @@ public class Envelope<M> {
 	final M message;
 
 	/**
-	 * Sender UUID.
+	 * Sender ID.
 	 */
-	final UUID sender;
+	final long sender;
 
 	/**
-	 * Target UUID.
+	 * Target ID.
 	 */
-	final UUID target;
+	final long target;
 
-	Envelope(final M message, final UUID sender, final UUID target) {
+	Envelope(final M message, final long sender, final long target) {
 		this.message = message;
 		this.sender = sender;
 		this.target = target;

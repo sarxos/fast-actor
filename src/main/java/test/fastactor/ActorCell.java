@@ -11,16 +11,14 @@ import static test.fastactor.Directives.Stop;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Random;
-import java.util.Set;
-import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import test.fastactor.Directive.ExecutionMode;
 import test.fastactor.Directives.Stop;
 import test.fastactor.dsl.Base;
@@ -34,12 +32,24 @@ import test.fastactor.dsl.Base;
  */
 public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
-	static final Random RANDOM = new Random(System.currentTimeMillis());
+	public static final class UidGenerator {
+
+		private static final Random RANDOM = new Random(System.currentTimeMillis());
+
+		public static long next() {
+			for (long uid;;) {
+				if ((uid = RANDOM.nextLong()) != 0) {
+					return uid;
+				}
+			}
+		}
+	}
+
 	static final ThreadLocal<ActorContext<?>> CONTEXT = new ThreadLocal<>();
 
-	private final Set<UUID> children = new LinkedHashSet<>();
+	private final LongOpenHashSet children = new LongOpenHashSet();
 	private final Deque<Consumer<M>> behaviours = new ArrayDeque<>(0);
-	private final UUID uuid = new UUID(RANDOM.nextLong(), RANDOM.nextLong());
+	private final long uuid = UidGenerator.next();
 	private final Queue<Envelope<?>> inbox = new LinkedList<>();
 
 	private final ActorSystem system;
@@ -52,7 +62,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	private Actor<M> actor;
 	private ActorRef sender;
 
-	ActorCell(final ActorSystem system, final Props<A> props, final UUID parent) {
+	ActorCell(final ActorSystem system, final Props<A> props, final long parent) {
 		this.system = system;
 		this.props = props;
 		this.self = new ActorRef(system, uuid);
@@ -94,8 +104,12 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		return actor;
 	}
 
-	Set<UUID> children() {
-		return children;
+	boolean addChild(final ActorRef child) {
+		return children.add(child.uuid);
+	}
+
+	boolean removeChild(final ActorRef child) {
+		return children.remove(child.uuid);
 	}
 
 	boolean isActorInitialized() {
@@ -203,8 +217,8 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 					.accept((M) envelope.message);
 			}
 
-			return true;
-		});
+			return Boolean.TRUE;
+		}).booleanValue();
 	}
 
 	@Override
@@ -237,7 +251,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 			// copy children into new array so we do not leak the cell context to the outside
 			// entities (in this case a reference to the children set)
 
-			final var uuids = children.toArray(UUID[]::new);
+			final var uuids = children.toLongArray();
 			final var props = Props.create(() -> new ActorStopCoordinator(self, uuids));
 
 			system.actorOf(props);
@@ -246,7 +260,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		}
 	}
 
-	private <T> T withSender(final UUID uuid, final Supplier<T> run) {
+	private <T> T withSender(final long uuid, final Supplier<T> run) {
 		this.sender = new ActorRef(system, uuid);
 		try {
 			return run.get();
@@ -282,7 +296,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		return system;
 	}
 
-	public UUID uuid() {
+	public long uuid() {
 		return uuid;
 	}
 
@@ -298,23 +312,23 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 class ActorStopCoordinator extends Actor<Stop.Ack> implements Base {
 
 	private final ActorRef parent;
-	private final UUID[] uuids;
+	private final long[] children;
 	private int howManyAlive;
 
-	public ActorStopCoordinator(final ActorRef parent, final UUID[] uuid) {
+	public ActorStopCoordinator(final ActorRef parent, final long[] children) {
 		this.parent = parent;
-		this.uuids = uuid;
-		this.howManyAlive = uuid.length;
+		this.children = children;
+		this.howManyAlive = children.length;
 	}
 
 	@Override
 	public void preStart() {
-		for (final UUID uuid : uuids) {
-			tellChildToStop(uuid);
+		for (final long child : children) {
+			tellChildToStop(child);
 		}
 	}
 
-	private void tellChildToStop(final UUID child) {
+	private void tellChildToStop(final long child) {
 		context().system().tell(Stop, child, parent.uuid);
 	}
 
@@ -397,7 +411,7 @@ class CellSetupProtocol implements Protocol {
 
 		@Override
 		public void approved(final ActorCell<?, ?> cell) {
-			cell.children().add(child.uuid);
+			cell.addChild(child);
 			child.tell(new AddChildConfirmation(), parent);
 		}
 
@@ -424,7 +438,7 @@ class CellSetupProtocol implements Protocol {
 
 		@Override
 		public void approved(final ActorCell<?, ?> cell) {
-			cell.children().remove(child.uuid);
+			cell.removeChild(child);
 		}
 	}
 

@@ -122,7 +122,7 @@ public class ActorTest {
 			.stream()
 			.flatMap(pool -> pool.threads.stream())
 			.flatMap(thread -> thread.dockedCells.keySet().stream())
-			.filter(ref.uuid::equals)
+			.filter(uuid -> uuid == ref.uuid)
 			.findAny()
 			.isPresent());
 
@@ -131,7 +131,7 @@ public class ActorTest {
 			.stream()
 			.flatMap(pool -> pool.threads.stream())
 			.flatMap(thread -> thread.active.keySet().stream())
-			.filter(ref.uuid::equals)
+			.filter(uuid -> uuid == ref.uuid)
 			.findAny()
 			.isPresent());
 	}

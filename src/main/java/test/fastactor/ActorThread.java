@@ -7,15 +7,15 @@ import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
+import org.jctools.maps.NonBlockingHashMapLong;
 import org.jctools.queues.MpscLinkedQueue;
+
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 
 
 public class ActorThread extends Thread {
@@ -23,13 +23,13 @@ public class ActorThread extends Thread {
 	/**
 	 * Mapping between cell {@link UUID} and corresponding {@link ActorCell} instance.
 	 */
-	final Map<UUID, ActorCell<? extends Actor<?>, ?>> dockedCells = new ConcurrentHashMap<>();
+	final NonBlockingHashMapLong<ActorCell<? extends Actor<?>, ?>> dockedCells = new NonBlockingHashMapLong<>();
 
 	/**
 	 * The active cells are the ones which have at least one message in the inbox. This map is not
 	 * thread-safe, so please do not use outside the {@link ActorThread} it's referenced on.
 	 */
-	final Map<UUID, ActorCell<? extends Actor<?>, ?>> active = new HashMap<>();
+	final Long2ObjectOpenHashMap<ActorCell<? extends Actor<?>, ?>> active = new Long2ObjectOpenHashMap<>();
 
 	/**
 	 * {@link Runnable}s which will be run after this {@link Thread} is completed.
@@ -147,7 +147,7 @@ public class ActorThread extends Thread {
 	}
 
 	@SuppressWarnings("rawtypes")
-	private ActorCell find(final UUID uuid) {
+	private ActorCell find(final long uuid) {
 		return dockedCells.get(uuid);
 	}
 
@@ -166,7 +166,7 @@ public class ActorThread extends Thread {
 		}
 	}
 
-	public void discard(final UUID uuid) {
+	public void discard(final long uuid) {
 		dockedCells.remove(uuid);
 	}
 

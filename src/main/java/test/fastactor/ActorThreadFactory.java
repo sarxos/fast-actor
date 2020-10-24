@@ -26,6 +26,6 @@ public class ActorThreadFactory {
 	}
 
 	private static String getNextIncrementalName(final String systemName, final String poolName, final int number) {
-		return poolName + "-" + String.format("%03d", number) + "@" + systemName;
+		return poolName + "-" + String.format("%03d", Integer.valueOf(number)) + "@" + systemName;
 	}
 }

@@ -5,21 +5,22 @@ import static test.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
 
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+
+import org.jctools.maps.NonBlockingHashMapLong;
 
 import test.fastactor.ActorThreadPool.DockingInfo;
 
 
 public class ActorSystem {
 
-	public static final UUID ZERO = new UUID(0, 0);
+	public static final long ZERO = 0;
 
 	private static final int DEFAULT_THROUGHPUT = 10;
 
 	final Map<String, ActorThreadPool> pools = new ConcurrentHashMap<>();
-	final Map<UUID, DockingInfo> cells = new ConcurrentHashMap<>();
+	final NonBlockingHashMapLong<DockingInfo> cells = new NonBlockingHashMapLong<>();
 
 	final String name;
 	final int throughput;
@@ -61,7 +62,7 @@ public class ActorSystem {
 		return actorOf(props, internals.user.uuid);
 	}
 
-	<A extends Actor<M>, M> ActorRef actorOf(final Props<A> props, final UUID parent) {
+	<A extends Actor<M>, M> ActorRef actorOf(final Props<A> props, final long parent) {
 
 		final var pool = getPoolFor(props).orElseThrow(poolNotFoundError(props));
 
@@ -90,7 +91,7 @@ public class ActorSystem {
 		} while (true);
 	}
 
-	void discard(final UUID uuid) {
+	void discard(final long uuid) {
 
 		final var info = getDockingInfoFor(uuid).orElseThrow(cellNotFoundError(uuid));
 		final var threadIndex = info.threadIndex;
@@ -105,7 +106,7 @@ public class ActorSystem {
 		tell(message, target.uuid, sender.uuid);
 	}
 
-	<M> void tell(final M message, final UUID target, final UUID sender) {
+	<M> void tell(final M message, final long target, final long sender) {
 
 		final Envelope<M> envelope = new Envelope<M>(message, sender, target);
 		final DockingInfo targetInfo = getDockingInfoFor(target).orElseThrow(cellNotFoundError(target));
@@ -115,10 +116,10 @@ public class ActorSystem {
 			.deposit(envelope, targetInfo);
 	}
 
-	<M> void forward(final Envelope<M> envelope, final UUID newTarget) {
+	<M> void forward(final Envelope<M> envelope, final long newTarget) {
 		final M message = envelope.message;
-		final UUID sender = envelope.sender;
-		tell(message, newTarget, sender);
+		final long oldSender = envelope.sender;
+		tell(message, newTarget, oldSender);
 	}
 
 	<M> void forwardToDeathLetter(final Envelope<M> envelope) {
@@ -135,8 +136,8 @@ public class ActorSystem {
 		tell(Directives.Stop, target, noSender());
 	}
 
-	private Optional<DockingInfo> getDockingInfoFor(final UUID uuid) {
-		return Optional.ofNullable(uuid).map(cells::get);
+	private Optional<DockingInfo> getDockingInfoFor(final long uuid) {
+		return Optional.ofNullable(cells.get(uuid));
 	}
 
 	private Optional<ActorThreadPool> getPoolFor(final Props<? extends Actor<?>> props) {
@@ -155,7 +156,7 @@ public class ActorSystem {
 		return () -> new IllegalStateException("Thread pool with name " + poolName + " has not been found in the system");
 	}
 
-	private static Supplier<RuntimeException> cellNotFoundError(final UUID uuid) {
+	private static Supplier<RuntimeException> cellNotFoundError(final long uuid) {
 		return () -> new IllegalStateException("Cell with UUID " + uuid + " has not been found in the system");
 	}
 
