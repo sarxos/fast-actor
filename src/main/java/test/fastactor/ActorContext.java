@@ -10,7 +10,17 @@ import java.util.function.Consumer;
  *
  * @param <M> the message class the actor and corresponding cell can receive
  */
-public interface ActorContext<M> {
+public interface ActorContext {
+
+	static final ThreadLocal<ActorContext> CONTEXT = new ThreadLocal<>();
+
+	static ActorContext getActive() {
+		return CONTEXT.get();
+	}
+
+	static <M> void setActive(final ActorContext context) {
+		CONTEXT.set(context);
+	}
 
 	/**
 	 * Get self actor-reference, i.e. the {@link ActorRef} which can be used to send message to self
@@ -45,17 +55,19 @@ public interface ActorContext<M> {
 	 * @param props the {@link Props} object used to create child actor
 	 * @return The {@link ActorRef} which can be used to send message to newly created actor
 	 */
-	public <A extends Actor<X>, X> ActorRef actorOf(final Props<A> props);
+	public <A extends Actor> ActorRef actorOf(final Props<A> props);
 
 	/**
 	 * @param behaviour the reference to new message {@link Consumer}
 	 */
-	void become(final Consumer<M> behaviour);
+	void become(final Consumer<Object> behaviour);
 
 	/**
 	 * Revert back to the previous message {@link Consumer}
+	 * 
+	 * @return
 	 */
-	void unbecome();
+	Consumer<Object> unbecome();
 
 	/**
 	 * Immediately stops the actor. After the actor is stopped it will not accept any more messages.

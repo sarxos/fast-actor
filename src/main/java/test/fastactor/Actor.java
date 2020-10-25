@@ -1,12 +1,14 @@
 package test.fastactor;
 
-public abstract class Actor<M> {
+public abstract class Actor {
 
-	private final ActorContext<M> context = ActorCell.getActiveContext();
+	private final ActorContext context = ActorContext.getActive();
 
-	public abstract void receive(final M message);
+	public ReceiveBuilder receive() {
+		return new ReceiveBuilder();
+	}
 
-	public ActorContext<M> context() {
+	public ActorContext context() {
 		return context;
 	}
 

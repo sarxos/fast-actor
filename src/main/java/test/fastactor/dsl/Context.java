@@ -5,6 +5,6 @@ import test.fastactor.ActorContext;
 
 interface Context {
 
-	ActorContext<?> context();
+	ActorContext context();
 
 }

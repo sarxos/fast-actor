@@ -1,6 +1,6 @@
 package test.fastactor;
 
-public class Props<A extends Actor<?>> {
+public class Props<A extends Actor> {
 
 	final ActorCreator<A> creator;
 
@@ -8,7 +8,7 @@ public class Props<A extends Actor<?>> {
 		this.creator = creator;
 	}
 
-	public static <A extends Actor<?>> Props<A> create(final ActorCreator<A> creator) {
+	public static <A extends Actor> Props<A> create(final ActorCreator<A> creator) {
 		return new Props<A>(creator);
 	}
 

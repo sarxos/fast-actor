@@ -35,7 +35,7 @@ public interface Directive {
 	 * 
 	 * @param cell the {@link ActorCell} to execute this directive on
 	 */
-	default void approved(final ActorCell<? extends Actor<?>, ?> cell) {
+	default void approved(final ActorCell<? extends Actor> cell) {
 		// do nothing by default, but feel free to override
 	}
 

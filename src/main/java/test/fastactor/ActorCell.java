@@ -12,9 +12,8 @@ import static test.fastactor.Directives.STOP;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.LinkedList;
-import java.util.Optional;
 import java.util.Queue;
-import java.util.Random;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -30,27 +29,13 @@ import test.fastactor.dsl.Base;
  * @param <A> the actor type
  * @param <M> the message type
  */
-public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
-
-	public static final class UidGenerator {
-
-		private static final Random RANDOM = new Random(System.currentTimeMillis());
-
-		public static long next() {
-			for (long uid;;) {
-				if ((uid = RANDOM.nextLong()) != 0) {
-					return uid;
-				}
-			}
-		}
-	}
-
-	static final ThreadLocal<ActorContext<?>> CONTEXT = new ThreadLocal<>();
+public class ActorCell<A extends Actor> implements ActorContext {
 
 	private final LongOpenHashSet children = new LongOpenHashSet(1);
-	private final Deque<Consumer<M>> behaviours = new ArrayDeque<>(0);
+	private final Deque<Consumer<Object>> behaviours = new ArrayDeque<>(0);
 	private final long uuid = UidGenerator.next();
-	private final Queue<Envelope<?>> inbox = new LinkedList<>();
+	private final Queue<Envelope> inbox = new LinkedList<>();
+	private final Consumer<Object> unhandled = this::unhandled;
 
 	private final ActorSystem system;
 	private final Props<A> props;
@@ -59,7 +44,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
 	private boolean started = false;
 	private boolean dead = false;
-	private Actor<M> actor;
+	private Actor actor;
 	private ActorRef sender;
 
 	ActorCell(final ActorSystem system, final Props<A> props, final long parent) {
@@ -77,31 +62,28 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	void start() {
 		this.started = true;
 		invokeActorConstructor();
+		createReceiver();
 		invokeActorPreStart();
 	}
 
-	@SuppressWarnings("unchecked")
-	static <M> ActorContext<M> getActiveContext() {
-		return (ActorContext<M>) CONTEXT.get();
-	}
-
-	static <M> void setActiveContext(final ActorContext<M> context) {
-		CONTEXT.set(context);
-	}
-
 	@Override
-	public <P extends Actor<X>, X> ActorRef actorOf(final Props<P> props) {
+	public <P extends Actor> ActorRef actorOf(final Props<P> props) {
 		final ActorRef child = system.actorOf(props, this.uuid);
 		children.add(child.uuid);
 		return child;
 	}
 
-	Actor<M> getOrCreateActor() {
-		if (actor == null) {
-			invokeActorConstructor();
-			invokeActorPreStart();
-		}
-		return actor;
+	private void createReceiver() {
+
+		final Consumer<Object> receiver = actor
+			.receive()
+			.create(unhandled);
+
+		become(receiver);
+	}
+
+	private void unhandled(final Object message) {
+		// TODO send UnhandledMessage(message) message to the system even stream
 	}
 
 	boolean addChild(final ActorRef child) {
@@ -117,11 +99,11 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	}
 
 	private void invokeActorConstructor() {
-		setActiveContext(this);
+		ActorContext.setActive(this); // change to stack
 		try {
 			actor = props.newActor();
 		} finally {
-			setActiveContext(null);
+			ActorContext.setActive(null);
 		}
 	}
 
@@ -142,8 +124,8 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		REJECTED,
 	}
 
-	public DeliveryStatus deliver(final Envelope<?> envelope) {
-		return withSender(envelope.sender, () -> {
+	public DeliveryStatus deliver(final Envelope envelope) {
+		return runWithSender(envelope.sender, () -> {
 			if (envelope.message instanceof Directive) {
 				return deliverDirective(envelope);
 			} else {
@@ -152,9 +134,9 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		});
 	}
 
-	private DeliveryStatus deliverDirective(final Envelope<?> envelope) {
+	private DeliveryStatus deliverDirective(final Envelope envelope) {
 
-		final var directive = envelope.asDirective().message;
+		final var directive = (Directive) envelope.message;
 
 		if (directive.mode() == ExecutionMode.RUN_IMMEDIATELY) {
 			directive.approved(this);
@@ -165,7 +147,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		return ACCEPTED;
 	}
 
-	private DeliveryStatus deliverMessage(final Envelope<?> envelope) {
+	private DeliveryStatus deliverMessage(final Envelope envelope) {
 		if (dead) {
 			return REJECTED;
 		} else if (inbox.offer(envelope)) {
@@ -199,22 +181,20 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		return CONTINUE;
 	}
 
-	@SuppressWarnings("unchecked")
-	private boolean processItem(final Envelope<?> envelope) {
+	private boolean processItem(final Envelope envelope) {
 
 		if (envelope == null) {
 			return true; // last message
 		}
 
-		return withSender(envelope.sender, () -> {
+		return runWithSender(envelope.sender, () -> {
 
 			if (envelope.message instanceof Directive) {
-				envelope.asDirective().message.approved(this);
+				((Directive) envelope.message).approved(this);
 			} else {
-				Optional
-					.ofNullable(behaviours.peek())
-					.orElse(getOrCreateActor()::receive)
-					.accept((M) envelope.message);
+				behaviours
+					.peek()
+					.accept(envelope.message);
 			}
 
 			return Boolean.TRUE;
@@ -222,17 +202,17 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	}
 
 	@Override
-	public void become(final Consumer<M> behaviour) {
+	public void become(final Consumer<Object> behaviour) {
 		behaviours.push(behaviour);
 	}
 
 	@Override
-	public void unbecome() {
-		behaviours.pop();
-	}
-
-	public void unbecomeAll() {
-		behaviours.clear();
+	public Consumer<Object> unbecome() {
+		if (behaviours.size() > 1) {
+			return behaviours.pop();
+		} else {
+			return null;
+		}
 	}
 
 	/**
@@ -243,8 +223,13 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	public void stop() {
 
 		dead = true;
+
 		invokeActorPostStop();
+
 		inbox.clear();
+		behaviours.clear();
+
+		actor = null;
 
 		if (hasChildren()) {
 
@@ -260,7 +245,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 		}
 	}
 
-	private <T> T withSender(final long uuid, final Supplier<T> run) {
+	private <T> T runWithSender(final long uuid, final Supplier<T> run) {
 		this.sender = new ActorRef(system, uuid);
 		try {
 			return run.get();
@@ -309,7 +294,19 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 	}
 }
 
-class ActorStopCoordinator extends Actor<Stop.Ack> implements Base {
+/**
+ * A random ID generator. Caller need to take special care to avoid duplicates.
+ */
+class UidGenerator {
+
+	private static final AtomicLong NEXT_ID = new AtomicLong(0);
+
+	static long next() {
+		return NEXT_ID.incrementAndGet();
+	}
+}
+
+class ActorStopCoordinator extends Actor implements Base {
 
 	private final ActorRef parent;
 	private final long[] children;
@@ -333,7 +330,12 @@ class ActorStopCoordinator extends Actor<Stop.Ack> implements Base {
 	}
 
 	@Override
-	public void receive(final Stop.Ack ack) {
+	public ReceiveBuilder receive() {
+		return super.receive()
+			.match(Stop.Ack.class, this::onStopAck);
+	}
+
+	public void onStopAck(final Stop.Ack ack) {
 		if (allChildrenDied()) {
 			tell(DISCARD, parent, noSender());
 			stop();
@@ -355,7 +357,7 @@ interface Directives {
 	 * Mark cell as initialized and start accepting messages.
 	 */
 	class Start implements Directive {
-		public @Override void approved(final ActorCell<?, ?> cell) {
+		public @Override void approved(final ActorCell<?> cell) {
 			cell.start();
 		}
 	}
@@ -366,7 +368,7 @@ interface Directives {
 	class Stop implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?, ?> cell) {
+		public void approved(final ActorCell<?> cell) {
 			cell.stop();
 			cell.reply(Ack.Instance);
 		}
@@ -384,7 +386,7 @@ interface Directives {
 	class Discard implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?, ?> cell) {
+		public void approved(final ActorCell<?> cell) {
 			final var system = cell.system();
 			final var uuid = cell.uuid();
 			system.discard(uuid);
@@ -410,7 +412,7 @@ class CellSetupProtocol implements Protocol {
 	final class AddChild implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?, ?> cell) {
+		public void approved(final ActorCell<?> cell) {
 			cell.addChild(child);
 			child.tell(new AddChildConfirmation(), parent);
 		}
@@ -430,7 +432,7 @@ class CellSetupProtocol implements Protocol {
 	final class AddChildConfirmation implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?, ?> cell) {
+		public void approved(final ActorCell<?> cell) {
 			cell.start();
 		}
 
@@ -443,7 +445,7 @@ class CellSetupProtocol implements Protocol {
 	final class RemoveChild implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?, ?> cell) {
+		public void approved(final ActorCell<?> cell) {
 			cell.removeChild(child);
 		}
 	}

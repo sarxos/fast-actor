@@ -1,7 +1,7 @@
 package test.fastactor;
 
 @FunctionalInterface
-public interface ActorCreator<T extends Actor<?>> {
+public interface ActorCreator<T extends Actor> {
 
 	/**
 	 * Create actor.

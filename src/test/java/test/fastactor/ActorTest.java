@@ -11,6 +11,7 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 
 
+@SuppressWarnings("boxing")
 public class ActorTest {
 
 	@Test
@@ -25,18 +26,19 @@ public class ActorTest {
 
 		final var system = ActorSystem.create("xyz");
 
-		class TestTellActor extends Actor<Integer> {
+		class TestTellActor extends Actor {
 
 			@Override
-			public void receive(final Integer i) {
-				received.get(i).complete(true);
+			public ReceiveBuilder receive() {
+				return super.receive()
+					.match(Integer.class, i -> received.get(i).complete(true));
 			}
 		}
 
 		final var ref = system.actorOf(Props.create(TestTellActor::new));
 
 		for (int i = 0; i < 5; i++) {
-			ref.tell(i, ActorRef.noSender());
+			ref.tell(Integer.valueOf(i), ActorRef.noSender());
 			received.get(i).get(500, TimeUnit.MILLISECONDS);
 		}
 	}
@@ -47,12 +49,7 @@ public class ActorTest {
 		final var started = new CompletableFuture<Boolean>();
 		final var system = ActorSystem.create("xyz");
 
-		class TestActor extends Actor<Integer> {
-
-			@Override
-			public void receive(final Integer number) {
-				// do nothing
-			}
+		class TestActor extends Actor {
 
 			@Override
 			public void preStart() {
@@ -71,12 +68,7 @@ public class ActorTest {
 		final var stopped = new CompletableFuture<Boolean>();
 		final var system = ActorSystem.create("xyz");
 
-		class TestActor extends Actor<Integer> {
-
-			@Override
-			public void receive(final Integer number) {
-				// do nothing
-			}
+		class TestActor extends Actor {
 
 			@Override
 			public void preStart() {
@@ -99,12 +91,7 @@ public class ActorTest {
 
 		final var system = ActorSystem.create("xyz");
 
-		class TestActor extends Actor<Integer> {
-
-			@Override
-			public void receive(final Integer number) {
-				// do nothing
-			}
+		class TestActor extends Actor {
 
 			@Override
 			public void preStart() {

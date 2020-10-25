@@ -5,48 +5,57 @@ import java.util.concurrent.CompletableFuture;
 import test.fastactor.InternalTempGuardian.Ask;
 
 
-@SuppressWarnings("rawtypes")
-class InternalTempGuardian extends Actor<Ask> {
+class InternalTempGuardian extends Actor {
 
-	public static final class Ask<T, R> {
+	public static final class Ask {
 
-		final CompletableFuture<R> completable = new CompletableFuture<R>();
-		final T message;
+		final CompletableFuture<Object> completable = new CompletableFuture<>();
+		final Object message;
 		final ActorRef target;
 
-		public Ask(final T message, final ActorRef target) {
+		public Ask(final Object message, final ActorRef target) {
 			this.message = message;
 			this.target = target;
 		}
 
-		void complete(final R result) {
+		void complete(final Object result) {
 			completable.complete(result);
 		}
 	}
 
 	@Override
-	@SuppressWarnings({ "unchecked" })
-	public void receive(final Ask ask) {
+	public ReceiveBuilder receive() {
+		return super.receive()
+			.match(Ask.class, this::onAsk);
+	}
+
+	private void onAsk(final Ask ask) {
 		context().actorOf(Props.create(() -> new InternalTempActor(ask)));
 	}
 }
 
-class InternalTempActor<T, R> extends Actor<R> {
+class InternalTempActor extends Actor {
 
-	final Ask<T, R> ask;
+	final Ask ask;
 
-	public InternalTempActor(final Ask<T, R> ask) {
+	public InternalTempActor(final Ask ask) {
 		this.ask = ask;
-	}
-
-	@Override
-	public void receive(final R result) {
-		ask.complete(result);
-		context().stop();
 	}
 
 	@Override
 	public void preStart() {
 		ask.target.tell(ask.message, context().self());
 	}
+
+	@Override
+	public ReceiveBuilder receive() {
+		return super.receive()
+			.matchAny(this::onResponse);
+	}
+
+	public void onResponse(final Object result) {
+		ask.complete(result);
+		context().stop();
+	}
+
 }

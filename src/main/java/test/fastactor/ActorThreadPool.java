@@ -54,7 +54,7 @@ public class ActorThreadPool {
 		return name;
 	}
 
-	public <M> DockingInfo dock(final ActorCell<? extends Actor<M>, M> cell) {
+	public <M> DockingInfo dock(final ActorCell<? extends Actor> cell) {
 
 		final int threadIndex = RANDOM.nextInt(parallelism);
 		final ActorThread thread = threads.get(threadIndex);
@@ -68,7 +68,7 @@ public class ActorThreadPool {
 		threadAt(threadIndex).undock(uuid);
 	}
 
-	public <M> void deposit(final Envelope<M> envelope, final DockingInfo info) {
+	public <M> void deposit(final Envelope envelope, final DockingInfo info) {
 		threadAt(info.threadIndex).deposit(envelope);
 	}
 

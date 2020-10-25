@@ -57,17 +57,17 @@ public class ActorSystem {
 	 * @param props the actor {@link Props}
 	 * @return New {@link ActorRef} which should be used to communicate with the actor
 	 */
-	public <A extends Actor<M>, M> ActorRef actorOf(final Props<A> props) {
+	public <A extends Actor> ActorRef actorOf(final Props<A> props) {
 		return actorOf(props, internals.user.uuid);
 	}
 
-	<A extends Actor<M>, M> ActorRef actorOf(final Props<A> props, final long parent) {
+	<A extends Actor> ActorRef actorOf(final Props<A> props, final long parent) {
 
 		final var pool = getPoolFor(props).orElseThrow(poolNotFoundError(props));
 
 		do {
 
-			final var cell = new ActorCell<A, M>(this, props, parent);
+			final var cell = new ActorCell<A>(this, props, parent);
 			final var uuid = cell.uuid();
 
 			// Since random numbers generator used to create unique cell IDs is not synchronized,
@@ -107,7 +107,7 @@ public class ActorSystem {
 
 	<M> void tell(final M message, final long target, final long sender) {
 
-		final Envelope<M> envelope = new Envelope<M>(message, sender, target);
+		final Envelope envelope = new Envelope(message, sender, target);
 		final DockingInfo targetInfo = getDockingInfoFor(target).orElseThrow(cellNotFoundError(target));
 
 		targetInfo
@@ -115,13 +115,13 @@ public class ActorSystem {
 			.deposit(envelope, targetInfo);
 	}
 
-	<M> void forward(final Envelope<M> envelope, final long newTarget) {
-		final M message = envelope.message;
+	<M> void forward(final Envelope envelope, final long newTarget) {
+		final Object message = envelope.message;
 		final long oldSender = envelope.sender;
 		tell(message, newTarget, oldSender);
 	}
 
-	<M> void forwardToDeathLetter(final Envelope<M> envelope) {
+	<M> void forwardToDeathLetter(final Envelope envelope) {
 		forward(envelope, internals.deathLetter.uuid);
 	}
 
@@ -139,7 +139,7 @@ public class ActorSystem {
 		return Optional.ofNullable(cells.get(uuid));
 	}
 
-	private Optional<ActorThreadPool> getPoolFor(final Props<? extends Actor<?>> props) {
+	private Optional<ActorThreadPool> getPoolFor(final Props<? extends Actor> props) {
 		return getPoolFor(props.getThreadPoolName());
 	}
 
@@ -147,7 +147,7 @@ public class ActorSystem {
 		return Optional.ofNullable(pools.get(poolName));
 	}
 
-	private static Supplier<RuntimeException> poolNotFoundError(final Props<? extends Actor<?>> props) {
+	private static Supplier<RuntimeException> poolNotFoundError(final Props<? extends Actor> props) {
 		return poolNotFoundError(props.getThreadPoolName());
 	}
 
@@ -168,34 +168,23 @@ public class ActorSystem {
 	}
 }
 
-class DeathLetter extends Actor<Object> {
+class DeathLetter extends Actor {
 
 	@Override
-	public void receive(final Object message) {
-		System.out.println("Death letter: " + message);
+	public ReceiveBuilder receive() {
+		return super.receive()
+			.matchAny(message -> System.out.println("Death letter: " + message));
 	}
 }
 
-class SystemActor extends Actor<Object> {
-	public @Override void receive(final Object message) {
-		// do nothing
-	}
+class SystemActor extends Actor {
 }
 
-class UserActor extends Actor<Object> {
-	public @Override void receive(final Object message) {
-		// do nothing
-	}
+class UserActor extends Actor {
 }
 
-class RootActor extends Actor<Object> {
-	public @Override void receive(final Object messahe) {
-		// do nothing
-	}
+class RootActor extends Actor {
 }
 
-class TempActor extends Actor<Object> {
-	public @Override void receive(final Object message) {
-		// do nothing
-	}
+class TempActor extends Actor {
 }

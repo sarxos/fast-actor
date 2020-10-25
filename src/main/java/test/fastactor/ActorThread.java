@@ -23,13 +23,13 @@ public class ActorThread extends Thread {
 	/**
 	 * Mapping between cell {@link UUID} and corresponding {@link ActorCell} instance.
 	 */
-	final NonBlockingHashMapLong<ActorCell<? extends Actor<?>, ?>> dockedCells = new NonBlockingHashMapLong<>();
+	final NonBlockingHashMapLong<ActorCell<? extends Actor>> dockedCells = new NonBlockingHashMapLong<>();
 
 	/**
 	 * The active cells are the ones which have at least one message in the inbox. This map is not
 	 * thread-safe, so please do not use outside the {@link ActorThread} it's referenced on.
 	 */
-	final Long2ObjectOpenHashMap<ActorCell<? extends Actor<?>, ?>> active = new Long2ObjectOpenHashMap<>();
+	final Long2ObjectOpenHashMap<ActorCell<? extends Actor>> active = new Long2ObjectOpenHashMap<>();
 
 	/**
 	 * {@link Runnable}s which will be run after this {@link Thread} is completed.
@@ -39,12 +39,12 @@ public class ActorThread extends Thread {
 	/**
 	 * Queue to store messages from cells docked on this thread (internal communication).
 	 */
-	final Queue<Envelope<?>> internalQueue = new LinkedList<>();
+	final Queue<Envelope> internalQueue = new LinkedList<>();
 
 	/**
 	 * Queue to store messages from cells docked on other threads (interthread communication).
 	 */
-	final MpscLinkedQueue<Envelope<?>> externalQueue = new MpscLinkedQueue<>();
+	final MpscLinkedQueue<Envelope> externalQueue = new MpscLinkedQueue<>();
 
 	final ActorSystem system;
 
@@ -84,7 +84,7 @@ public class ActorThread extends Thread {
 
 	private void onRun() {
 
-		final var queue = new LinkedList<Envelope<?>>();
+		final var queue = new LinkedList<Envelope>();
 
 		while (!isInterrupted()) {
 
@@ -107,13 +107,13 @@ public class ActorThread extends Thread {
 		}
 	}
 
-	private void deliver(final Queue<Envelope<?>> queue) {
+	private void deliver(final Queue<Envelope> queue) {
 		for (final var envelope : queue) {
 			deliver(envelope, active.computeIfAbsent(envelope.target, this::find));
 		}
 	}
 
-	private void deliver(final Envelope<?> envelope, final ActorCell<?, ?> target) {
+	private void deliver(final Envelope envelope, final ActorCell<? extends Actor> target) {
 		if (target == null || target.deliver(envelope) == REJECTED) {
 			if (envelope.message instanceof Directive) {
 				((Directive) envelope.message).rejected();
@@ -155,7 +155,7 @@ public class ActorThread extends Thread {
 		return this;
 	}
 
-	public void dock(final ActorCell<? extends Actor<?>, ?> cell) {
+	public void dock(final ActorCell<? extends Actor> cell) {
 
 		final var uuid = cell.uuid();
 		final var overwritten = dockedCells.putIfAbsent(uuid, cell) != null;
@@ -174,7 +174,7 @@ public class ActorThread extends Thread {
 	 * @param id the {@link ActorCell} ID
 	 * @return The removed {@link ActorCell} or null when no cell with a given ID was docked here
 	 */
-	public ActorCell<? extends Actor<?>, ?> undock(final long id) {
+	public ActorCell<? extends Actor> undock(final long id) {
 		return dockedCells.remove(id);
 	}
 
@@ -184,7 +184,7 @@ public class ActorThread extends Thread {
 	 *
 	 * @param envelope the envelope with message
 	 */
-	public void deposit(final Envelope<?> envelope) {
+	public void deposit(final Envelope envelope) {
 		if (this == currentThread()) {
 			deposit(envelope, internalQueue);
 		} else {
@@ -198,7 +198,7 @@ public class ActorThread extends Thread {
 	 * @param envelope the envelope to deposit
 	 * @param queue the queue where it should be added
 	 */
-	private void deposit(final Envelope<?> envelope, final Queue<Envelope<?>> queue) {
+	private void deposit(final Envelope envelope, final Queue<Envelope> queue) {
 		wakeUpWhen(queue.offer(envelope));
 	}
 

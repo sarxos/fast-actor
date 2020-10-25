@@ -1,11 +1,11 @@
 package test.fastactor;
 
-public class Envelope<M> {
+public class Envelope {
 
 	/**
 	 * Value to be delivered.
 	 */
-	final M message;
+	final Object message;
 
 	/**
 	 * Sender ID.
@@ -17,14 +17,9 @@ public class Envelope<M> {
 	 */
 	final long target;
 
-	Envelope(final M message, final long sender, final long target) {
+	Envelope(final Object message, final long sender, final long target) {
 		this.message = message;
 		this.sender = sender;
 		this.target = target;
-	}
-
-	@SuppressWarnings("unchecked")
-	public Envelope<? extends Directive> asDirective() {
-		return (Envelope<? extends Directive>) this;
 	}
 }
