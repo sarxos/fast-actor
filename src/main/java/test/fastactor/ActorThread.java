@@ -76,13 +76,13 @@ public class ActorThread extends Thread {
 	@Override
 	public void run() {
 		try {
-			process();
+			onRun();
 		} finally {
-			terminated();
+			onComplete();
 		}
 	}
 
-	private void process() {
+	private void onRun() {
 
 		final var queue = new LinkedList<Envelope<?>>();
 
@@ -92,7 +92,6 @@ public class ActorThread extends Thread {
 			// move internal messages to the temporary queue to avoid concurrent modification
 
 			externalQueue.drain(queue::offer);
-
 			internalQueue.forEach(queue::offer);
 			internalQueue.clear();
 
@@ -166,10 +165,25 @@ public class ActorThread extends Thread {
 		}
 	}
 
-	public void discard(final long uuid) {
-		dockedCells.remove(uuid);
+	/**
+	 * Undock cell with a given ID from this {@link ActorThread}. This will permanently remove
+	 * {@link ActorCell} with a given ID from the cells docked on this thread. If the cell was
+	 * active this operation will not make it inactive, which means that all messages which were
+	 * being delivered, will be processed till the end regardless if given cell is docked here.
+	 *
+	 * @param id the {@link ActorCell} ID
+	 * @return The removed {@link ActorCell} or null when no cell with a given ID was docked here
+	 */
+	public ActorCell<? extends Actor<?>, ?> undock(final long id) {
+		return dockedCells.remove(id);
 	}
 
+	/**
+	 * Deposit envelope with a message into the queue. This method will wake up the
+	 * {@link ActorThread} if it was parked.
+	 *
+	 * @param envelope the envelope with message
+	 */
 	public void deposit(final Envelope<?> envelope) {
 		if (this == currentThread()) {
 			deposit(envelope, internalQueue);
@@ -178,17 +192,28 @@ public class ActorThread extends Thread {
 		}
 	}
 
-	private void deposit(final Envelope<?> envelope, final Queue<Envelope<?>> inbox) {
-		wakeUpWhen(inbox.add(envelope));
+	/**
+	 * Deposit envelope into the specified queue.
+	 *
+	 * @param envelope the envelope to deposit
+	 * @param queue the queue where it should be added
+	 */
+	private void deposit(final Envelope<?> envelope, final Queue<Envelope<?>> queue) {
+		wakeUpWhen(queue.offer(envelope));
 	}
 
+	/**
+	 * Wake up (unpark) the {@link ActorThread} if queues were modified.
+	 *
+	 * @param modified
+	 */
 	private void wakeUpWhen(final boolean modified) {
 		if (modified) {
 			unpark(this);
 		}
 	}
 
-	private void terminated() {
+	private void onComplete() {
 		terminators.forEach(Runnable::run);
 	}
 }

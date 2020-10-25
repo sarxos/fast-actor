@@ -6,8 +6,8 @@ import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 import static test.fastactor.ActorCell.ProcessingStatus.CONTINUE;
 import static test.fastactor.ActorRef.noSender;
 import static test.fastactor.ActorSystem.ZERO;
-import static test.fastactor.Directives.Discard;
-import static test.fastactor.Directives.Stop;
+import static test.fastactor.Directives.DISCARD;
+import static test.fastactor.Directives.STOP;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -47,7 +47,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
 	static final ThreadLocal<ActorContext<?>> CONTEXT = new ThreadLocal<>();
 
-	private final LongOpenHashSet children = new LongOpenHashSet();
+	private final LongOpenHashSet children = new LongOpenHashSet(1);
 	private final Deque<Consumer<M>> behaviours = new ArrayDeque<>(0);
 	private final long uuid = UidGenerator.next();
 	private final Queue<Envelope<?>> inbox = new LinkedList<>();
@@ -256,7 +256,7 @@ public class ActorCell<A extends Actor<M>, M> implements ActorContext<M> {
 
 			system.actorOf(props);
 		} else {
-			self.tell(Discard, self);
+			self.tell(DISCARD, self);
 		}
 	}
 
@@ -329,13 +329,13 @@ class ActorStopCoordinator extends Actor<Stop.Ack> implements Base {
 	}
 
 	private void tellChildToStop(final long child) {
-		context().system().tell(Stop, child, parent.uuid);
+		context().system().tell(STOP, child, parent.uuid);
 	}
 
 	@Override
 	public void receive(final Stop.Ack ack) {
 		if (allChildrenDied()) {
-			tell(Discard, parent, noSender());
+			tell(DISCARD, parent, noSender());
 			stop();
 		}
 	}
@@ -347,9 +347,9 @@ class ActorStopCoordinator extends Actor<Stop.Ack> implements Base {
 
 interface Directives {
 
-	final static Directive Start = new Start();
-	final static Directive Stop = new Stop();
-	final static Directive Discard = new Discard();
+	final static Directive START = new Start();
+	final static Directive STOP = new Stop();
+	final static Directive DISCARD = new Discard();
 
 	/**
 	 * Mark cell as initialized and start accepting messages.
@@ -405,7 +405,7 @@ class CellSetupProtocol implements Protocol {
 	/**
 	 * From child to parent. Tell parent to add child as its own. When parent approves, the
 	 * {@link AddChildConfirmation} is send to child. When parent already died or did not exist in
-	 * the first place, the {@link Directives#Stop} is send to the child instead.
+	 * the first place, the {@link Directives#STOP} is send to the child instead.
 	 */
 	final class AddChild implements Directive {
 
@@ -417,10 +417,16 @@ class CellSetupProtocol implements Protocol {
 
 		@Override
 		public void rejected() {
-			child.tell(Directives.Stop, parent);
+			child.tell(Directives.STOP, parent);
 		}
 	}
 
+	/**
+	 * From parent to child. Tell the child that it was added to the list of children in the parent
+	 * {@link ActorCell}. When this {@link Directive} is approved by the child, its cell will start.
+	 * When this {@link Directive} is rejected, the {@link RemoveChild} will be send to the parent
+	 * to remove already added child.
+	 */
 	final class AddChildConfirmation implements Directive {
 
 		@Override
@@ -452,7 +458,7 @@ class CellSetupProtocol implements Protocol {
 	@Override
 	public void initiate() {
 		if (isParentTheRootActor()) {
-			child.tell(Directives.Start, child);
+			child.tell(Directives.START, child);
 		} else {
 			parent.tell(new AddChild(), child);
 		}

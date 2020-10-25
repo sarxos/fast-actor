@@ -1,5 +1,8 @@
 package test.fastactor;
 
+import java.util.Objects;
+
+
 public class ActorRef {
 
 	public static final ActorRef NO_REF = new ActorRef(null, ActorSystem.ZERO);
@@ -16,11 +19,6 @@ public class ActorRef {
 		return NO_REF;
 	}
 
-	@Override
-	public String toString() {
-		return uuid + "@" + system.getName();
-	}
-
 	public void tell(final Object message) {
 		tell(message, noSender());
 	}
@@ -35,5 +33,39 @@ public class ActorRef {
 
 	public void ask(final Object message, final ActorRef sender) {
 
+	}
+
+	@Override
+	public String toString() {
+		return "fa://" + system.getName() + "/" + uuid;
+	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + system.name.hashCode();
+		result = prime * result + Long.hashCode(uuid);
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+
+		if (this == obj) {
+			return true;
+		}
+		if (obj == null) {
+			return false;
+		}
+		if (getClass() != obj.getClass()) {
+			return false;
+		}
+
+		return equals0((ActorRef) obj);
+	}
+
+	private boolean equals0(ActorRef ref) {
+		return Objects.equals(system.name, ref.system.name) && uuid == ref.uuid;
 	}
 }

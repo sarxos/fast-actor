@@ -3,11 +3,10 @@ package test.fastactor;
 import static test.fastactor.ActorRef.noSender;
 import static test.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
 
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
+import org.jctools.maps.NonBlockingHashMap;
 import org.jctools.maps.NonBlockingHashMapLong;
 
 import test.fastactor.ActorThreadPool.DockingInfo;
@@ -19,7 +18,7 @@ public class ActorSystem {
 
 	private static final int DEFAULT_THROUGHPUT = 10;
 
-	final Map<String, ActorThreadPool> pools = new ConcurrentHashMap<>();
+	final NonBlockingHashMap<String, ActorThreadPool> pools = new NonBlockingHashMap<>(1);
 	final NonBlockingHashMapLong<DockingInfo> cells = new NonBlockingHashMapLong<>();
 
 	final String name;
@@ -133,7 +132,7 @@ public class ActorSystem {
 	 * @param target the target to be stopped
 	 */
 	public void stop(final ActorRef target) {
-		tell(Directives.Stop, target, noSender());
+		tell(Directives.STOP, target, noSender());
 	}
 
 	private Optional<DockingInfo> getDockingInfoFor(final long uuid) {
