@@ -122,4 +122,15 @@ public class ActorTest {
 			.findAny()
 			.isPresent());
 	}
+
+	@Test
+	public void test_deathLetter() throws Exception {
+
+		final var system = ActorSystem.create("xyz");
+
+		system.tell("aaa", 99999L, 1111L);
+
+		Thread.sleep(500);
+
+	}
 }

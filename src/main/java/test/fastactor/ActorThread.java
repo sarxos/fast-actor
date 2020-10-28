@@ -116,7 +116,7 @@ public class ActorThread extends Thread {
 	private void deliver(final Envelope envelope, final ActorCell<? extends Actor> target) {
 		if (target == null || target.deliver(envelope) == REJECTED) {
 			if (envelope.message instanceof Directive) {
-				((Directive) envelope.message).rejected();
+				((Directive) envelope.message).failed();
 			} else {
 				system.forwardToDeathLetter(envelope);
 			}

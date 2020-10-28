@@ -69,6 +69,10 @@ public interface ActorContext {
 	 */
 	Consumer<Object> unbecome();
 
+	ActorRef watch(final ActorRef watchee);
+
+	ActorRef unwatch(final ActorRef watchee);
+
 	/**
 	 * Immediately stops the actor. After the actor is stopped it will not accept any more messages.
 	 * Both {@link Actor}, {@link ActorCell} and all corresponding resources will be dereferences
@@ -80,4 +84,6 @@ public interface ActorContext {
 	 * @return The {@link ActorSystem} this {@link Actor} resides in.
 	 */
 	ActorSystem system();
+
+	long uuid();
 }

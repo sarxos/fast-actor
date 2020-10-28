@@ -1,11 +1,17 @@
 package test.fastactor;
 
+import static test.fastactor.Directive.ExecutionMode.RUN_IMMEDIATELY;
+
+
 /**
  * A directive is a very special kind of message. Existing {@link ActorCell} cannot rejected a
- * {@link Directive}. It can, however, be rejected when {@link ActorCell} does not exist or is not
- * yet docked on the {@link ActorThread}. Every {@link Directive} can define a piece of code to be
- * executed in the context of the {@link ActorCell}. The execution is done by the very same
- * {@link ActorThread} where the target {@link ActorCell} is docked on.
+ * {@link Directive} like they can do with the ordinary message. A {@link Directive}, however, can
+ * be failed when target {@link ActorCell} does not exist or when it is not docked on the
+ * {@link ActorThread}. A {@link Directive} implementor can specify a piece of code to be executed
+ * whenever one of these situations occur. In case when it's successfully delivered to the target
+ * cell, the {@link Directive#approved(ActorCell)} is invoked. Otherwise the
+ * {@link Directive#failed()} is invoked. In both cases the execution is done by the very same
+ * thread that processes ordinary messages.
  *
  * @author Bartosz Firyn (sarxos)
  */
@@ -40,10 +46,9 @@ public interface Directive {
 	}
 
 	/**
-	 * Executed when directive is rejected by the {@link ActorCell} or the {@link ActorCell} has not
-	 * been found.
+	 * Run when target {@link ActorCell} has not been found or when it is dead.
 	 */
-	default void rejected() {
+	default void failed() {
 		// do nothing by default, but feel free to override
 	}
 
@@ -60,6 +65,6 @@ public interface Directive {
 	 * @return A {@link Directive} execution order
 	 */
 	default ExecutionMode mode() {
-		return ExecutionMode.RUN_IMMEDIATELY;
+		return RUN_IMMEDIATELY;
 	}
 }

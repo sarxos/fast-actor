@@ -5,7 +5,6 @@ import static test.fastactor.ActorCell.DeliveryStatus.REJECTED;
 import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 import static test.fastactor.ActorCell.ProcessingStatus.CONTINUE;
 import static test.fastactor.ActorRef.noSender;
-import static test.fastactor.ActorSystem.ZERO;
 import static test.fastactor.Directives.DISCARD;
 import static test.fastactor.Directives.STOP;
 
@@ -29,9 +28,11 @@ import test.fastactor.dsl.Base;
  * @param <A> the actor type
  * @param <M> the message type
  */
-public class ActorCell<A extends Actor> implements ActorContext {
+public class ActorCell<A extends Actor> implements ActorContext, ParentChild, DeathWatch {
 
 	private final LongOpenHashSet children = new LongOpenHashSet(1);
+	private final LongOpenHashSet watchers = new LongOpenHashSet(0);
+	private final LongOpenHashSet watchees = new LongOpenHashSet(0);
 	private final Deque<Consumer<Object>> behaviours = new ArrayDeque<>(0);
 	private final long uuid = UidGenerator.next();
 	private final Queue<Envelope> inbox = new LinkedList<>();
@@ -55,22 +56,19 @@ public class ActorCell<A extends Actor> implements ActorContext {
 	}
 
 	ActorRef setup() {
-		new CellSetupProtocol(self(), parent()).initiate();
+
+		setupParentChildRelation();
+
 		return self;
 	}
 
 	void start() {
+
 		this.started = true;
+
 		invokeActorConstructor();
 		createReceiver();
 		invokeActorPreStart();
-	}
-
-	@Override
-	public <P extends Actor> ActorRef actorOf(final Props<P> props) {
-		final ActorRef child = system.actorOf(props, this.uuid);
-		children.add(child.uuid);
-		return child;
 	}
 
 	private void createReceiver() {
@@ -83,19 +81,7 @@ public class ActorCell<A extends Actor> implements ActorContext {
 	}
 
 	private void unhandled(final Object message) {
-		// TODO send UnhandledMessage(message) message to the system even stream
-	}
-
-	boolean addChild(final ActorRef child) {
-		return children.add(child.uuid);
-	}
-
-	boolean removeChild(final ActorRef child) {
-		return children.remove(child.uuid);
-	}
-
-	boolean isActorInitialized() {
-		return actor != null;
+		System.out.println("Unhandled: " + message); // TODO implement this properly
 	}
 
 	private void invokeActorConstructor() {
@@ -231,6 +217,14 @@ public class ActorCell<A extends Actor> implements ActorContext {
 
 		actor = null;
 
+		if (hasWatchers()) { // am i watched by someone?
+			sendTerminatedToWatchers();
+		}
+
+		if (hasWatchees()) { // am i watching someone?
+			unwatchAllWatchees();
+		}
+
 		if (hasChildren()) {
 
 			// copy children into new array so we do not leak the cell context to the outside
@@ -254,11 +248,21 @@ public class ActorCell<A extends Actor> implements ActorContext {
 		}
 	}
 
-	/**
-	 * @return True if actor has children, false otherwise
-	 */
-	private boolean hasChildren() {
-		return !children.isEmpty();
+	@Override
+	public LongOpenHashSet children() {
+		return children;
+	}
+
+	@Override
+	public
+		LongOpenHashSet watchers() {
+		return watchers;
+	}
+
+	@Override
+	public
+		LongOpenHashSet watchees() {
+		return watchees;
 	}
 
 	@Override
@@ -281,6 +285,7 @@ public class ActorCell<A extends Actor> implements ActorContext {
 		return system;
 	}
 
+	@Override
 	public long uuid() {
 		return uuid;
 	}
@@ -390,79 +395,6 @@ interface Directives {
 			final var system = cell.system();
 			final var uuid = cell.uuid();
 			system.discard(uuid);
-		}
-	}
-}
-
-class CellSetupProtocol implements Protocol {
-
-	final ActorRef child;
-	final ActorRef parent;
-
-	public CellSetupProtocol(ActorRef child, ActorRef parent) {
-		this.child = child;
-		this.parent = parent;
-	}
-
-	/**
-	 * From child to parent. Tell parent to add child as its own. When parent approves, the
-	 * {@link AddChildConfirmation} is send to child. When parent already died or did not exist in
-	 * the first place, the {@link Directives#STOP} is send to the child instead.
-	 */
-	final class AddChild implements Directive {
-
-		@Override
-		public void approved(final ActorCell<?> cell) {
-			cell.addChild(child);
-			child.tell(new AddChildConfirmation(), parent);
-		}
-
-		@Override
-		public void rejected() {
-			child.tell(Directives.STOP, parent);
-		}
-	}
-
-	/**
-	 * From parent to child. Tell the child that it was added to the list of children in the parent
-	 * {@link ActorCell}. When this {@link Directive} is approved by the child, its cell will start.
-	 * When this {@link Directive} is rejected, the {@link RemoveChild} will be send to the parent
-	 * to remove already added child.
-	 */
-	final class AddChildConfirmation implements Directive {
-
-		@Override
-		public void approved(final ActorCell<?> cell) {
-			cell.start();
-		}
-
-		@Override
-		public void rejected() {
-			parent.tell(new RemoveChild(), child);
-		}
-	}
-
-	final class RemoveChild implements Directive {
-
-		@Override
-		public void approved(final ActorCell<?> cell) {
-			cell.removeChild(child);
-		}
-	}
-
-	/**
-	 * @return True if parent actor is a root, false otherwise
-	 */
-	private boolean isParentTheRootActor() {
-		return parent.uuid == ZERO;
-	}
-
-	@Override
-	public void initiate() {
-		if (isParentTheRootActor()) {
-			child.tell(Directives.START, child);
-		} else {
-			parent.tell(new AddChild(), child);
 		}
 	}
 }

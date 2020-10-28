@@ -4,6 +4,7 @@ import static test.fastactor.ActorRef.noSender;
 import static test.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
 
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import org.jctools.maps.NonBlockingHashMap;
@@ -108,11 +109,12 @@ public class ActorSystem {
 	<M> void tell(final M message, final long target, final long sender) {
 
 		final Envelope envelope = new Envelope(message, sender, target);
-		final DockingInfo targetInfo = getDockingInfoFor(target).orElseThrow(cellNotFoundError(target));
-
-		targetInfo
+		final Runnable forwardToDeathLetter = () -> forward(envelope, internals.deathLetter.uuid);
+		final Consumer<DockingInfo> deposit = info -> info
 			.getPool()
-			.deposit(envelope, targetInfo);
+			.deposit(envelope, info);
+
+		getDockingInfoFor(target).ifPresentOrElse(deposit, forwardToDeathLetter);
 	}
 
 	<M> void forward(final Envelope envelope, final long newTarget) {
