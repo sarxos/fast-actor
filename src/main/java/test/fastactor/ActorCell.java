@@ -30,12 +30,12 @@ import test.fastactor.dsl.Base;
  */
 public class ActorCell<A extends Actor> implements ActorContext, ParentChild, DeathWatch {
 
-	private final LongOpenHashSet children = new LongOpenHashSet(1);
-	private final LongOpenHashSet watchers = new LongOpenHashSet(0);
-	private final LongOpenHashSet watchees = new LongOpenHashSet(0);
-	private final Deque<Consumer<Object>> behaviours = new ArrayDeque<>(0);
 	private final long uuid = UidGenerator.next();
 	private final Queue<Envelope> inbox = new LinkedList<>();
+	private final Deque<Consumer<Object>> behaviours = new ArrayDeque<>(0);
+	private final LongOpenHashSet children = new LongOpenHashSet(0);
+	private final LongOpenHashSet watchers = new LongOpenHashSet(0);
+	private final LongOpenHashSet watchees = new LongOpenHashSet(0);
 	private final Consumer<Object> unhandled = this::unhandled;
 
 	private final ActorSystem system;
@@ -85,7 +85,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	}
 
 	private void invokeActorConstructor() {
-		ActorContext.setActive(this); // change to stack
+		ActorContext.setActive(this); // TODO change to stack
 		try {
 			actor = props.newActor();
 		} finally {
@@ -154,9 +154,22 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	 */
 	public ProcessingStatus process(final int throughput) {
 
-		if (dead || !started) {
+		// Do not process messages from inbox when actor cell has not yet been started. We need to
+		// wait for all startup protocols to complete.
+
+		if (!started) {
 			return COMPLETE;
 		}
+
+		// Do not process any messages when actor cell is already dead. There is no reason to do so.
+		// Dead actor cell should be discarded as fast as possible.
+
+		if (dead) {
+			return COMPLETE;
+		}
+
+		// Process given amount of messages. If all messages has been processed, return COMPLETED.
+		// This will cause cell deactivation (it will be removed from the list of active cells).
 
 		for (int i = 0; i < throughput; i++) {
 			if (processItem(inbox.poll())) {
@@ -164,9 +177,19 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 			}
 		}
 
+		// Otherwise, if not all messages from inbox has been processed in this burst, return
+		// CONTINUE. The cell will remain active and thread will take care of it again at the next
+		// cycle.
+
 		return CONTINUE;
 	}
 
+	/**
+	 * Process single message.
+	 * 
+	 * @param envelope the message to be processed
+	 * @return Return true if message is null and false otherwise
+	 */
 	private boolean processItem(final Envelope envelope) {
 
 		if (envelope == null) {
@@ -183,7 +206,8 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 					.accept(envelope.message);
 			}
 
-			return Boolean.TRUE;
+			return Boolean.FALSE;
+
 		}).booleanValue();
 	}
 
@@ -220,7 +244,6 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 		if (hasWatchers()) { // am i watched by someone?
 			sendTerminatedToWatchers();
 		}
-
 		if (hasWatchees()) { // am i watching someone?
 			unwatchAllWatchees();
 		}
@@ -335,7 +358,7 @@ class ActorStopCoordinator extends Actor implements Base {
 	}
 
 	@Override
-	public ReceiveBuilder receive() {
+	public Receive receive() {
 		return super.receive()
 			.match(Stop.Ack.class, this::onStopAck);
 	}
@@ -375,11 +398,11 @@ interface Directives {
 		@Override
 		public void approved(final ActorCell<?> cell) {
 			cell.stop();
-			cell.reply(Ack.Instance);
+			cell.reply(Ack.INSTANCE);
 		}
 
-		static enum Ack {
-			Instance
+		static class Ack {
+			final static Ack INSTANCE = new Ack();
 		}
 	}
 

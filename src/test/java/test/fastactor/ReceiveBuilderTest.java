@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 
 import org.junit.jupiter.api.Test;
 
-import test.fastactor.ReceiveBuilder.Matcher;
+import test.fastactor.Receive.Matcher;
 
 
 public class ReceiveBuilderTest {
@@ -12,7 +12,7 @@ public class ReceiveBuilderTest {
 	@Test
 	public void test() {
 
-		final var r = new ReceiveBuilder()
+		final var r = new Receive()
 			.match(Number.class, n -> {})
 			.match(Integer.class, i -> {});
 

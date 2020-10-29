@@ -6,25 +6,39 @@ import test.fastactor.DeathWatch.Terminated;
 
 public interface DeathWatch extends ActorContext {
 
-	final class WatchAck implements Conditional {
+	/**
+	 * Message send to the actor to confirm completion of the {@link ActorContext#watch(ActorRef)}
+	 * operation.
+	 */
+	final class WatchAck implements Conditional<DeathWatch> {
 
+		/**
+		 * The actor-reference of the watched actor.
+		 */
 		private final ActorRef ref;
 
 		WatchAck(final ActorRef ref) {
 			this.ref = ref;
 		}
 
+		/**
+		 * @return The actor-reference of the watched actor
+		 */
 		public ActorRef ref() {
 			return ref;
 		}
 
 		@Override
-		public boolean processIf(final ActorCell<?> cell) {
+		public boolean processIf(final DeathWatch cell) {
 			return !cell.watchees().contains(ref.uuid);
 		}
 	}
 
-	final class UnwatchAck implements Conditional {
+	/**
+	 * Message send to the actor to confirm completion of the {@link ActorContext#unwatch(ActorRef)}
+	 * operation.
+	 */
+	final class UnwatchAck implements Conditional<DeathWatch> {
 
 		private final ActorRef ref;
 
@@ -37,12 +51,16 @@ public interface DeathWatch extends ActorContext {
 		}
 
 		@Override
-		public boolean processIf(final ActorCell<?> cell) {
+		public boolean processIf(final DeathWatch cell) {
 			return cell.watchees().contains(ref.uuid);
 		}
 	}
 
-	final class Terminated implements Conditional {
+	/**
+	 * Message send to the actor when one of the watched actors died (the actor restart does not
+	 * count as termination).
+	 */
+	final class Terminated implements Conditional<DeathWatch> {
 
 		private final ActorRef ref;
 
@@ -55,7 +73,7 @@ public interface DeathWatch extends ActorContext {
 		}
 
 		@Override
-		public boolean processIf(final ActorCell<?> cell) {
+		public boolean processIf(final DeathWatch cell) {
 			return cell.watchees().contains(ref.uuid);
 		}
 	}

@@ -4,8 +4,8 @@ public abstract class Actor {
 
 	private final ActorContext context = ActorContext.getActive();
 
-	public ReceiveBuilder receive() {
-		return new ReceiveBuilder();
+	public Receive receive() {
+		return new Receive();
 	}
 
 	public ActorContext context() {

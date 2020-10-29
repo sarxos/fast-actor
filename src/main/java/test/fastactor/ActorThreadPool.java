@@ -54,34 +54,40 @@ public class ActorThreadPool {
 		return name;
 	}
 
-	public <M> DockingInfo dock(final ActorCell<? extends Actor> cell) {
+	public <M> CellDockingInfo dock(final ActorCell<? extends Actor> cell) {
 
 		final int threadIndex = RANDOM.nextInt(parallelism);
 		final ActorThread thread = threads.get(threadIndex);
 
 		thread.dock(cell);
 
-		return new DockingInfo(this, threadIndex);
+		return new CellDockingInfo(this, threadIndex);
 	}
 
-	public void discard(final long uuid, final int threadIndex) {
-		threadAt(threadIndex).undock(uuid);
+	/**
+	 * Discard cell with a given uid from this pool.
+	 *
+	 * @param uid the actor cell uid
+	 * @param threadIndex the thread index
+	 */
+	public void discard(final long uid, final int threadIndex) {
+		threadAt(threadIndex).undock(uid);
 	}
 
-	public <M> void deposit(final Envelope envelope, final DockingInfo info) {
-		threadAt(info.threadIndex).deposit(envelope);
+	public <M> void deposit(final Envelope envelope, final int threadIndex) {
+		threadAt(threadIndex).deposit(envelope);
 	}
 
 	private ActorThread threadAt(final int threadIndex) {
 		return threads.get(threadIndex);
 	}
 
-	static class DockingInfo {
+	static class CellDockingInfo {
 
 		final ActorThreadPool pool;
 		final int threadIndex;
 
-		public DockingInfo(final ActorThreadPool pool, final int threadIndex) {
+		public CellDockingInfo(final ActorThreadPool pool, final int threadIndex) {
 			this.pool = pool;
 			this.threadIndex = threadIndex;
 		}

@@ -29,7 +29,7 @@ public class ActorTest {
 		class TestTellActor extends Actor {
 
 			@Override
-			public ReceiveBuilder receive() {
+			public Receive receive() {
 				return super.receive()
 					.match(Integer.class, i -> received.get(i).complete(true));
 			}
@@ -39,6 +39,9 @@ public class ActorTest {
 
 		for (int i = 0; i < 5; i++) {
 			ref.tell(Integer.valueOf(i), ActorRef.noSender());
+		}
+
+		for (int i = 0; i < 5; i++) {
 			received.get(i).get(500, TimeUnit.MILLISECONDS);
 		}
 	}

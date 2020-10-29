@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 
 
 @SuppressWarnings({ "rawtypes", "unchecked" })
-public class ReceiveBuilder {
+public class Receive {
 
 	private static final Comparator<Matcher> COMPARATOR = (a, b) -> distance(b.type) - distance(a.type);
 
@@ -20,9 +20,9 @@ public class ReceiveBuilder {
 	 * @param <M> the message type - inferred
 	 * @param type the type (a {@link Class}) to match
 	 * @param consumer the {@link Consumer} to use when message is instance of a given type
-	 * @return This {@link ReceiveBuilder}
+	 * @return This {@link Receive}
 	 */
-	public <M> ReceiveBuilder match(final Class<M> type, final Consumer<M> consumer) {
+	public <M> Receive match(final Class<M> type, final Consumer<M> consumer) {
 		consumers.add(new Matcher(type, consumer));
 		return this;
 	}
@@ -32,9 +32,9 @@ public class ReceiveBuilder {
 	 * matchers.
 	 *
 	 * @param consumer the {@link Consumer} to invoke.
-	 * @return This {@link ReceiveBuilder}
+	 * @return This {@link Receive}
 	 */
-	public ReceiveBuilder matchAny(final Consumer<Object> consumer) {
+	public Receive matchAny(final Consumer<Object> consumer) {
 		return match(Object.class, consumer);
 	}
 

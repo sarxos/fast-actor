@@ -1,7 +1,7 @@
 package test.fastactor;
 
-public interface Conditional {
+public interface Conditional<T> {
 
-	boolean processIf(final ActorCell<?> cell);
+	boolean processIf(final T cell);
 
 }
