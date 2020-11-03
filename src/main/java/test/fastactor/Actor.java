@@ -2,7 +2,7 @@ package test.fastactor;
 
 public abstract class Actor {
 
-	private final ActorContext context = ActorContext.getActive();
+	private final ActorContext context = ActorCell.getActiveContext();
 
 	public Receive receive() {
 		return new Receive();

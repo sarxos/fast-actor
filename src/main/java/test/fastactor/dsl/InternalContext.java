@@ -3,7 +3,7 @@ package test.fastactor.dsl;
 import test.fastactor.ActorContext;
 
 
-interface Context {
+interface InternalContext {
 
 	ActorContext context();
 

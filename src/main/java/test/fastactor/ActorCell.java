@@ -30,6 +30,8 @@ import test.fastactor.dsl.Base;
  */
 public class ActorCell<A extends Actor> implements ActorContext, ParentChild, DeathWatch {
 
+	static final ThreadLocal<Deque<ActorContext>> CONTEXT = ThreadLocal.withInitial(ArrayDeque::new);
+
 	private final long uuid = UidGenerator.next();
 	private final Queue<Envelope> inbox = new LinkedList<>();
 	private final Deque<Consumer<Object>> behaviours = new ArrayDeque<>(0);
@@ -55,6 +57,40 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 		this.parent = new ActorRef(system, parent);
 	}
 
+	static ActorContext getActiveContext() {
+		return CONTEXT
+			.get()
+			.peek();
+	}
+
+	static void withActiveContext(final ActorContext context, final Runnable runnable) {
+
+		CONTEXT
+			.get()
+			.push(context);
+
+		try {
+			runnable.run();
+		} finally {
+			CONTEXT
+				.get()
+				.pop();
+		}
+	}
+
+	/**
+	 * Setup the cell before actor is started. This method is invoked from the other threads and
+	 * thus must not leak any internal properties except the following:
+	 * <ul>
+	 * <li>{@link Actorcell#self}</li>
+	 * <li>{@link Actorcell#parent}</li>
+	 * <li>{@link Actorcell#emitter}</li>
+	 * <li>{@link Actorcell#props}</li>
+	 * <li>{@link Actorcell#system}</li>
+	 * </ul>
+	 *
+	 * @return This cell's {@link ActorRef}
+	 */
 	ActorRef setup() {
 
 		setupParentChildRelation();
@@ -85,12 +121,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	}
 
 	private void invokeActorConstructor() {
-		ActorContext.setActive(this); // TODO change to stack
-		try {
-			actor = props.newActor();
-		} finally {
-			ActorContext.setActive(null);
-		}
+		withActiveContext(this, () -> actor = props.newActor());
 	}
 
 	private void invokeActorPreStart() {
@@ -277,14 +308,12 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	}
 
 	@Override
-	public
-		LongOpenHashSet watchers() {
+	public LongOpenHashSet watchers() {
 		return watchers;
 	}
 
 	@Override
-	public
-		LongOpenHashSet watchees() {
+	public LongOpenHashSet watchees() {
 		return watchees;
 	}
 

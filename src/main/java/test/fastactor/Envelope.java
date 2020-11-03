@@ -1,6 +1,6 @@
 package test.fastactor;
 
-public class Envelope {
+class Envelope {
 
 	/**
 	 * Value to be delivered.

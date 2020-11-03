@@ -201,12 +201,21 @@ public class ActorSystem {
 		return () -> new IllegalStateException("Cell with UUID " + uuid + " has not been found in the system");
 	}
 
+	public ActorRef refForDeathLetters() {
+		return internal.deathLetters;
+	}
+
+	public ActorRef refForEventBus() {
+		return internal.eventBus;
+	}
+
 	class InternalActors {
 		final ActorRef root = actorOf(Props.create(RootActor::new), ZERO);
 		final ActorRef user = actorOf(Props.create(UserActor::new), root.uuid);
 		final ActorRef system = actorOf(Props.create(SystemActor::new), root.uuid);
 		final ActorRef askRouter = actorOf(Props.create(AskRouter::new), root.uuid);
 		final ActorRef deathLetters = actorOf(Props.create(DeathLetters::new), root.uuid);
+		final ActorRef eventBus = actorOf(Props.create(EventBusActor::new), system.uuid);
 	}
 }
 

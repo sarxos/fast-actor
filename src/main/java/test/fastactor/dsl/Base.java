@@ -4,7 +4,7 @@ import test.fastactor.ActorRef;
 import test.fastactor.ActorSystem;
 
 
-public interface Base extends Context {
+public interface Base extends InternalContext {
 
 	default ActorRef self() {
 		return context().self();
@@ -12,6 +12,10 @@ public interface Base extends Context {
 
 	default ActorRef sender() {
 		return context().sender();
+	}
+
+	default long uuid() {
+		return self().uuid();
 	}
 
 	default void stop() {
@@ -22,11 +26,11 @@ public interface Base extends Context {
 		return context().system();
 	}
 
-	default <M> void tell(final M message, final ActorRef target) {
+	default void tell(final Object message, final ActorRef target) {
 		system().tell(message, target, self());
 	}
 
-	default <M> void tell(final M message, final ActorRef target, final ActorRef sender) {
+	default void tell(final Object message, final ActorRef target, final ActorRef sender) {
 		system().tell(message, target, sender);
 	}
 }

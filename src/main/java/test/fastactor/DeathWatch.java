@@ -83,9 +83,6 @@ public interface DeathWatch extends ActorContext {
 	LongOpenHashSet watchees();
 
 	@Override
-	ActorRef self();
-
-	@Override
 	default ActorRef watch(final ActorRef watchee) {
 		new WatchProtocol(self(), watchee).initiate();
 		return watchee;

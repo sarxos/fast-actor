@@ -28,6 +28,10 @@ public class ActorRef {
 		return NO_REF;
 	}
 
+	public long uuid() {
+		return uuid;
+	}
+
 	/**
 	 * Send message to the actor represented by this actor-reference. Use no-sender actor-reference
 	 * as the sender. Recipient will be unable to reply to this message. Or to be more clear - it

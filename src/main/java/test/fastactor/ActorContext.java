@@ -12,16 +12,6 @@ import java.util.function.Consumer;
  */
 public interface ActorContext {
 
-	static final ThreadLocal<ActorContext> CONTEXT = new ThreadLocal<>();
-
-	static ActorContext getActive() {
-		return CONTEXT.get();
-	}
-
-	static <M> void setActive(final ActorContext context) {
-		CONTEXT.set(context);
-	}
-
 	/**
 	 * Get self actor-reference, i.e. the {@link ActorRef} which can be used to send message to self
 	 * (this very {@link Actor}).
