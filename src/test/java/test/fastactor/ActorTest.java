@@ -38,7 +38,7 @@ public class ActorTest {
 		final var ref = system.actorOf(Props.create(TestTellActor::new));
 
 		for (int i = 0; i < 5; i++) {
-			ref.tell(Integer.valueOf(i), ActorRef.noSender());
+			ref.tell(Integer.valueOf(i));
 		}
 
 		for (int i = 0; i < 5; i++) {
@@ -130,8 +130,9 @@ public class ActorTest {
 	public void test_deathLetter() throws Exception {
 
 		final var system = ActorSystem.create("xyz");
+		final var nonExisting = system.refFor(99999L);
 
-		system.tell("aaa", 99999L, 1111L);
+		system.tell("aaa", nonExisting, nonExisting);
 
 		Thread.sleep(500);
 

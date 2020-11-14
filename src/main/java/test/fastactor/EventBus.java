@@ -178,9 +178,11 @@ class EventBusActor extends Actor implements Base {
 	private LongConsumer send(final Event event) {
 
 		final var value = event.value;
-		final var publisher = event.emitter.uuid;
+		final var emitter = event.emitter;
 
-		return subscriber -> system().tell(value, subscriber, publisher);
+		return subscriber -> system()
+			.refFor(subscriber)
+			.tell(value, emitter);
 	}
 
 	private LongOpenHashSet getSubscribersFor(final Class<?> type) {

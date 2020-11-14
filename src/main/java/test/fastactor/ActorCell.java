@@ -4,7 +4,6 @@ import static test.fastactor.ActorCell.DeliveryStatus.ACCEPTED;
 import static test.fastactor.ActorCell.DeliveryStatus.REJECTED;
 import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 import static test.fastactor.ActorCell.ProcessingStatus.CONTINUE;
-import static test.fastactor.ActorRef.noSender;
 import static test.fastactor.InternalDirectives.DISCARD;
 import static test.fastactor.InternalDirectives.STOP;
 
@@ -124,7 +123,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 		final var sender = sender();
 		final var unhandled = new Unhandled(message, target, sender);
 
-		system.emit(unhandled, sender);
+		system.emitEvent(unhandled, sender);
 	}
 
 	private void invokeActorConstructor() {
@@ -300,8 +299,8 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 		}
 	}
 
-	private <T> T runWithSender(final long uuid, final Supplier<T> run) {
-		this.sender = new ActorRef(system, uuid);
+	private <T> T runWithSender(final ActorRef sender, final Supplier<T> run) {
+		this.sender = sender;
 		try {
 			return run.get();
 		} finally {
@@ -390,7 +389,9 @@ class ActorStopCoordinator extends Actor implements Base {
 	}
 
 	private void tellChildToStop(final long child) {
-		context().system().tell(STOP, child, parent.uuid);
+		system()
+			.refFor(child)
+			.tell(STOP, parent);
 	}
 
 	@Override
@@ -401,7 +402,7 @@ class ActorStopCoordinator extends Actor implements Base {
 
 	public void onStopAck(final StopAck ack) {
 		if (allChildrenDied()) {
-			tell(DISCARD, parent, noSender());
+			parent.tell(DISCARD);
 			stop();
 		}
 	}

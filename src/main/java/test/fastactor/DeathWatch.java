@@ -138,9 +138,11 @@ interface DeathWatch extends ActorContext {
 		final var iterator = watchers().iterator();
 
 		while (iterator.hasNext()) {
-			final var target = iterator.nextLong();
-			final var sender = self.uuid;
-			system.tell(terminated, target, sender);
+
+			final var watcherUuid = iterator.nextLong();
+			final var watcher = system.refFor(watcherUuid);
+
+			watcher.tell(terminated, self);
 		}
 	}
 

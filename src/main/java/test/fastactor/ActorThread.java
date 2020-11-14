@@ -109,7 +109,11 @@ public class ActorThread extends Thread {
 
 	private void deliver(final Queue<Envelope> queue) {
 		for (final var envelope : queue) {
-			deliver(envelope, active.computeIfAbsent(envelope.target, this::find));
+
+			final var uuid = envelope.target.uuid();
+			final var cell = active.computeIfAbsent(uuid, this::find);
+
+			deliver(envelope, cell);
 		}
 	}
 

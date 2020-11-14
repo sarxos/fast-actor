@@ -1,7 +1,6 @@
 package test.fastactor;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static test.fastactor.ActorRef.noSender;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -106,7 +105,7 @@ public class EventBusTest {
 
 		final var event = new TestEvent();
 
-		system.emit(event, noSender());
+		system.emitEvent(event);
 
 		final TestEvent value1 = received1.get(500, MILLISECONDS);
 		final TestEvent value2 = received2.get(500, MILLISECONDS);

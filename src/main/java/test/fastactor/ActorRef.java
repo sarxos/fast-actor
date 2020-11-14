@@ -11,21 +11,12 @@ import java.util.concurrent.CompletionStage;
  */
 public class ActorRef {
 
-	private static final ActorRef NO_REF = new ActorRef(null, ActorSystem.ZERO_UUID);
-
 	final ActorSystem system;
 	final long uuid;
 
 	ActorRef(final ActorSystem system, final long uuid) {
 		this.system = system;
 		this.uuid = uuid;
-	}
-
-	/**
-	 * @return A no-sender {@link ActorRef} pointing a non existing zero-actor
-	 */
-	public static final ActorRef noSender() {
-		return NO_REF;
 	}
 
 	public long uuid() {
@@ -40,11 +31,11 @@ public class ActorRef {
 	 * @param message the message
 	 */
 	public void tell(final Object message) {
-		tell(message, noSender());
+		tell(message, system.noSender());
 	}
 
 	public void tell(final Object message, final ActorRef sender) {
-		system.tell(message, this.uuid, sender.uuid);
+		system.tell(message, this, sender);
 	}
 
 	public <R> CompletionStage<R> ask(final Object message) {

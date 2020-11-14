@@ -10,14 +10,14 @@ class Envelope {
 	/**
 	 * Sender ID.
 	 */
-	final long sender;
+	final ActorRef sender;
 
 	/**
 	 * Target ID.
 	 */
-	final long target;
+	final ActorRef target;
 
-	Envelope(final Object message, final long sender, final long target) {
+	Envelope(final Object message, final ActorRef sender, final ActorRef target) {
 		this.message = message;
 		this.sender = sender;
 		this.target = target;

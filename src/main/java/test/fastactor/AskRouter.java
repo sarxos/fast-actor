@@ -40,13 +40,12 @@ class AskRouter extends Actor {
 
 	private void onAsk(final Ask<?> ask) {
 
-		final var system = context().system();
-		final var sender = context().self().uuid;
-		final var uuid = getFreeUuidOrCreateNewRoutee();
+		final var sender = context().self();
+		final var ref = getFreeUuidOrCreateNewRoutee();
+		final var uuid = ref.uuid();
 
 		busy.add(uuid);
-
-		system.tell(ask, uuid, sender);
+		ref.tell(ask, sender);
 	}
 
 	private void onAskDone(final AskDone done) {
@@ -59,15 +58,19 @@ class AskRouter extends Actor {
 		free.push(uuid);
 	}
 
-	private long getFreeUuidOrCreateNewRoutee() {
+	private ActorRef getFreeUuidOrCreateNewRoutee() {
 
-		if (!free.isEmpty()) {
-			return free.popLong();
+		final var context = context();
+
+		if (free.isEmpty()) {
+			return context.actorOf(ASK_ACTOR);
 		}
 
-		return context()
-			.actorOf(ASK_ACTOR)
-			.uuid();
+		final var uuid = free.popLong();
+		final var system = context.system();
+
+		return system.refFor(uuid);
+
 	}
 
 	static class AskDone {

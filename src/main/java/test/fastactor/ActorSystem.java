@@ -1,6 +1,5 @@
 package test.fastactor;
 
-import static test.fastactor.ActorRef.noSender;
 import static test.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
 
 import java.util.Optional;
@@ -18,7 +17,7 @@ import test.fastactor.DeadLetters.DeadLetter;
 public class ActorSystem {
 
 	/**
-	 * Non-existing UUID. Used by {@link ActorRef#noSender()}.
+	 * Non-existing UUID.
 	 */
 	public static final long ZERO_UUID = 0;
 
@@ -26,6 +25,7 @@ public class ActorSystem {
 
 	final NonBlockingHashMap<String, ActorThreadPool> pools = new NonBlockingHashMap<>(1);
 	final NonBlockingHashMapLong<CellDockingInfo> cells = new NonBlockingHashMapLong<>();
+	final ActorRef zeroRef = new ActorRef(this, ZERO_UUID);
 
 	final String name;
 	final int throughput;
@@ -132,20 +132,9 @@ public class ActorSystem {
 	 * @param sender the sender {@link ActorRef}
 	 */
 	public void tell(final Object message, final ActorRef target, final ActorRef sender) {
-		tell(message, target.uuid, sender.uuid);
-	}
-
-	/**
-	 * Send and forget.
-	 *
-	 * @param message the message
-	 * @param target the target uid
-	 * @param sender the sender uid
-	 */
-	void tell(final Object message, final long target, final long sender) {
 
 		final var envelope = new Envelope(message, sender, target);
-		final var info = cells.get(target);
+		final var info = cells.get(target.uuid());
 
 		if (info == null) {
 			forwardToDeadLetters(envelope);
@@ -166,17 +155,13 @@ public class ActorSystem {
 		return ask.completion;
 	}
 
-	public void forward(final Envelope envelope, final ActorRef target) {
-		forward(envelope, target.uuid);
-	}
-
 	/**
 	 * Forward message to target.
 	 *
 	 * @param envelope the {@link Envelope} containing message
 	 * @param target a new target uid
 	 */
-	void forward(final Envelope envelope, final long target) {
+	void forward(final Envelope envelope, final ActorRef target) {
 		final var message = envelope.message;
 		final var sender = envelope.sender;
 		tell(message, target, sender);
@@ -185,15 +170,19 @@ public class ActorSystem {
 	void forwardToDeadLetters(final Envelope envelope) {
 
 		final var message = envelope.message;
-		final var target = new ActorRef(this, envelope.target);
-		final var sender = new ActorRef(this, envelope.sender);
+		final var target = envelope.target;
+		final var sender = envelope.sender;
 		final var deadLetter = new DeadLetter(message, target, sender);
 		final var deadLetters = internal.deadLetters;
 
 		deadLetters.tell(deadLetter);
 	}
 
-	public void emit(final Object event, final ActorRef emitter) {
+	public void emitEvent(final Object event) {
+		emitEvent(event, noSender());
+	}
+
+	public void emitEvent(final Object event, final ActorRef emitter) {
 		final var msg = new EventBus.Event(event, emitter);
 		final var bus = refForEventBus();
 		tell(msg, bus, emitter);
@@ -243,6 +232,14 @@ public class ActorSystem {
 
 	public ActorRef refForEventBus() {
 		return internal.eventBus;
+	}
+
+	public ActorRef refFor(final long uuid) {
+		return new ActorRef(this, uuid);
+	}
+
+	public ActorRef noSender() {
+		return zeroRef;
 	}
 
 	class InternalActors {
