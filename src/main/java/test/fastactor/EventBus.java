@@ -1,11 +1,11 @@
 package test.fastactor;
 
 import static java.util.Arrays.stream;
+import static java.util.stream.Collectors.toList;
 import static java.util.stream.Stream.concat;
 
-import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
 import java.util.stream.Stream;
@@ -21,17 +21,35 @@ import test.fastactor.dsl.Base;
 
 public interface EventBus {
 
+	/**
+	 * Subscribe {@link ActorRef} to the event type given by the provided {@link Class}.
+	 */
 	class Subscribe {
 
-		final Class<?> type;
+		final Class<?> eventType;
 		final ActorRef subscriber;
 
+		/**
+		 * @param type the event {@link Class} to subscribe
+		 * @param subscriber the {@link ActorRef} of the subscribing actor
+		 */
 		public Subscribe(final Class<?> type, final ActorRef subscriber) {
-			this.type = type;
+			this.eventType = type;
 			this.subscriber = subscriber;
+		}
+
+		public Class<?> getEventType() {
+			return eventType;
+		}
+
+		public ActorRef getSubscriber() {
+			return subscriber;
 		}
 	}
 
+	/**
+	 * The confirmation that {@link Subscribe} was done successfully.
+	 */
 	class SubscribeAck {
 
 		final Subscribe subscribe;
@@ -39,16 +57,35 @@ public interface EventBus {
 		public SubscribeAck(final Subscribe subscribe) {
 			this.subscribe = subscribe;
 		}
+
+		public Subscribe getSubscribe() {
+			return subscribe;
+		}
 	}
 
+	/**
+	 * Unsubscribe {@link ActorRef} from the event type given by the provided {@link Class}.
+	 */
 	class Unsubscribe {
 
-		final Class<?> type;
+		final Class<?> eventType;
 		final ActorRef subscriber;
 
+		/**
+		 * @param type the event {@link Class} to unsubscribe
+		 * @param subscriber the {@link ActorRef} of the subscribing actor
+		 */
 		public Unsubscribe(final Class<?> type, final ActorRef subscriber) {
-			this.type = type;
+			this.eventType = type;
 			this.subscriber = subscriber;
+		}
+
+		public Class<?> getEventType() {
+			return eventType;
+		}
+
+		public ActorRef getSubscriber() {
+			return subscriber;
 		}
 	}
 
@@ -56,7 +93,7 @@ public interface EventBus {
 
 		final Unsubscribe unsubscribe;
 
-		public UnsubscribeAck(Unsubscribe unsubscribe) {
+		public UnsubscribeAck(final Unsubscribe unsubscribe) {
 			this.unsubscribe = unsubscribe;
 		}
 	}
@@ -75,9 +112,20 @@ public interface EventBus {
 
 class EventBusActor extends Actor implements Base {
 
-	private final LongOpenHashSet noSubscription = new LongOpenHashSet(0);
-	private final Function<Class<?>, LongOpenHashSet> newSubscribersSet = $ -> new LongOpenHashSet();
-	private final Map<Class<?>, LongOpenHashSet> subscriptions = new HashMap<>();
+	private static final LongOpenHashSet NO_SUBSCRIBERS = new LongOpenHashSet(0) {
+
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public void forEach(final LongConsumer action) {
+			// do nothing, this is empty set
+		}
+	};
+
+	private static final Function<Class<?>, LongOpenHashSet> NEW_SUBSCRIBERS_SET = $ -> new LongOpenHashSet();
+
+	private final Map<Class<?>, LongOpenHashSet> subscriptions = new IdentityHashMap<>();
+	private final Map<Class<?>, Class<?>[]> classAncestorsCache = new IdentityHashMap<>();
 
 	@Override
 	public Receive receive() {
@@ -90,10 +138,10 @@ class EventBusActor extends Actor implements Base {
 	void onSubscribe(final Subscribe subscribe) {
 
 		final var self = self();
-		final var type = subscribe.type;
+		final var type = subscribe.eventType;
 		final var subscriber = subscribe.subscriber;
 
-		subscription(type).add(subscriber.uuid);
+		getSubscribersFor(type).add(subscriber.uuid);
 
 		subscriber.tell(new SubscribeAck(subscribe), self);
 	}
@@ -101,28 +149,29 @@ class EventBusActor extends Actor implements Base {
 	void onUnsubscribe(final Unsubscribe unsubscribe) {
 
 		final var self = self();
-		final var type = unsubscribe.type;
+		final var type = unsubscribe.eventType;
 		final var subscriber = unsubscribe.subscriber;
+		final var uuid = subscriber.uuid;
 
-		subscription(type).remove(subscriber.uuid);
+		getSubscribersFor(type).remove(uuid);
 
 		subscriber.tell(new UnsubscribeAck(unsubscribe), self);
-
 	}
 
 	void onEvent(final Event event) {
 
-		final var value = event.value;
-		final var clazz = value.getClass();
+		final var eventValue = event.value;
+		final var eventClass = eventValue.getClass();
+		final var classes = classAncestorsCache.computeIfAbsent(eventClass, this::computeAncestors);
 
-		ascendantsOf(clazz)
-			.distinct()
-			.forEach(checkIfSubscribedAndSend(event));
+		for (final Class<?> clazz : classes) {
+			checkIfSubscribedAndSend(clazz, event);
+		}
 	}
 
-	private Consumer<Class<?>> checkIfSubscribedAndSend(final Event event) {
-		return clazz -> subscriptions
-			.getOrDefault(clazz, noSubscription)
+	private void checkIfSubscribedAndSend(final Class<?> clazz, final Event event) {
+		subscriptions
+			.getOrDefault(clazz, NO_SUBSCRIBERS)
 			.forEach(send(event));
 	}
 
@@ -134,18 +183,25 @@ class EventBusActor extends Actor implements Base {
 		return subscriber -> system().tell(value, subscriber, publisher);
 	}
 
-	private LongOpenHashSet subscription(final Class<?> type) {
-		return subscriptions.computeIfAbsent(type, newSubscribersSet);
+	private LongOpenHashSet getSubscribersFor(final Class<?> type) {
+		return subscriptions.computeIfAbsent(type, NEW_SUBSCRIBERS_SET);
 	}
 
-	private Stream<Class<?>> ascendantsOf(final Class<?> clazz) {
+	private Class<?>[] computeAncestors(final Class<?> clazz) {
+		return ancestorsStream(clazz)
+			.distinct()
+			.collect(toList())
+			.toArray(Class[]::new);
+	}
+
+	private Stream<Class<?>> ancestorsStream(final Class<?> clazz) {
 
 		if (clazz == null) {
 			return Stream.empty();
 		}
 
-		final var superclass = concat(Stream.of(clazz), ascendantsOf(clazz.getSuperclass()));
-		final var interfaces = stream(clazz.getInterfaces()).flatMap(this::ascendantsOf);
+		final var superclass = concat(Stream.of(clazz), ancestorsStream(clazz.getSuperclass()));
+		final var interfaces = stream(clazz.getInterfaces()).flatMap(this::ancestorsStream);
 
 		return concat(superclass, interfaces);
 	}

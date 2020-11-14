@@ -4,6 +4,7 @@ import static test.fastactor.ActorRef.noSender;
 import static test.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
 
 import java.util.Optional;
+import java.util.concurrent.CompletionStage;
 import java.util.function.Supplier;
 
 import org.jctools.maps.NonBlockingHashMap;
@@ -11,11 +12,15 @@ import org.jctools.maps.NonBlockingHashMapLong;
 
 import test.fastactor.ActorThreadPool.CellDockingInfo;
 import test.fastactor.AskRouter.Ask;
+import test.fastactor.DeadLetters.DeadLetter;
 
 
 public class ActorSystem {
 
-	public static final long ZERO = 0;
+	/**
+	 * Non-existing UUID. Used by {@link ActorRef#noSender()}.
+	 */
+	public static final long ZERO_UUID = 0;
 
 	private static final int DEFAULT_THROUGHPUT = 10;
 
@@ -109,6 +114,17 @@ public class ActorSystem {
 	}
 
 	/**
+	 * Send and forget. The {@link ActorRef#noSender()} is used as a sender so if the target actor
+	 * replies the reply will be delivered to the dead-letters.
+	 *
+	 * @param message the message
+	 * @param target the target {@link ActorRef}
+	 */
+	public void tell(final Object message, final ActorRef target) {
+		tell(message, target, noSender());
+	}
+
+	/**
 	 * Send and forget.
 	 *
 	 * @param message the message
@@ -132,7 +148,7 @@ public class ActorSystem {
 		final var info = cells.get(target);
 
 		if (info == null) {
-			forwardToDeathLetters(envelope);
+			forwardToDeadLetters(envelope);
 		} else {
 			final var threadPool = info.getPool();
 			final var threadIndex = info.threadIndex;
@@ -140,15 +156,18 @@ public class ActorSystem {
 		}
 	}
 
-	Ask ask(final Object message, final long target) {
+	public <R> CompletionStage<R> ask(final Object message, final ActorRef target) {
 
-		final var ask = new Ask(message, target);
-		final var router = internal.askRouter;
-		final var sender = noSender();
+		final var ask = new Ask<R>(message, target);
+		final var ref = refForAskRouter();
 
-		tell(ask, router, sender);
+		tell(ask, ref);
 
-		return ask;
+		return ask.completion;
+	}
+
+	public void forward(final Envelope envelope, final ActorRef target) {
+		forward(envelope, target.uuid);
 	}
 
 	/**
@@ -163,8 +182,21 @@ public class ActorSystem {
 		tell(message, target, sender);
 	}
 
-	void forwardToDeathLetters(final Envelope envelope) {
-		forward(envelope, internal.deathLetters.uuid);
+	void forwardToDeadLetters(final Envelope envelope) {
+
+		final var message = envelope.message;
+		final var target = new ActorRef(this, envelope.target);
+		final var sender = new ActorRef(this, envelope.sender);
+		final var deadLetter = new DeadLetter(message, target, sender);
+		final var deadLetters = internal.deadLetters;
+
+		deadLetters.tell(deadLetter);
+	}
+
+	public void emit(final Object event, final ActorRef emitter) {
+		final var msg = new EventBus.Event(event, emitter);
+		final var bus = refForEventBus();
+		tell(msg, bus, emitter);
 	}
 
 	/**
@@ -174,7 +206,7 @@ public class ActorSystem {
 	 * @param target the target to be stopped
 	 */
 	public void stop(final ActorRef target) {
-		tell(Directives.STOP, target, noSender());
+		tell(InternalDirectives.STOP, target, noSender());
 	}
 
 	private Optional<CellDockingInfo> getDockingInfoFor(final long uuid) {
@@ -201,8 +233,12 @@ public class ActorSystem {
 		return () -> new IllegalStateException("Cell with UUID " + uuid + " has not been found in the system");
 	}
 
+	public ActorRef refForAskRouter() {
+		return internal.askRouter;
+	}
+
 	public ActorRef refForDeathLetters() {
-		return internal.deathLetters;
+		return internal.deadLetters;
 	}
 
 	public ActorRef refForEventBus() {
@@ -210,21 +246,12 @@ public class ActorSystem {
 	}
 
 	class InternalActors {
-		final ActorRef root = actorOf(Props.create(RootActor::new), ZERO);
+		final ActorRef root = actorOf(Props.create(RootActor::new), ZERO_UUID);
 		final ActorRef user = actorOf(Props.create(UserActor::new), root.uuid);
 		final ActorRef system = actorOf(Props.create(SystemActor::new), root.uuid);
 		final ActorRef askRouter = actorOf(Props.create(AskRouter::new), root.uuid);
-		final ActorRef deathLetters = actorOf(Props.create(DeathLetters::new), root.uuid);
+		final ActorRef deadLetters = actorOf(Props.create(DeadLettersActor::new), root.uuid);
 		final ActorRef eventBus = actorOf(Props.create(EventBusActor::new), system.uuid);
-	}
-}
-
-class DeathLetters extends Actor {
-
-	@Override
-	public Receive receive() {
-		return super.receive()
-			.matchAny(message -> System.out.println("Death letter: " + message));
 	}
 }
 
@@ -235,7 +262,4 @@ class UserActor extends Actor {
 }
 
 class RootActor extends Actor {
-}
-
-class TempActor extends Actor {
 }

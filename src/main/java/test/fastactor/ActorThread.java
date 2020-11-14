@@ -118,7 +118,7 @@ public class ActorThread extends Thread {
 			if (envelope.message instanceof Directive) {
 				((Directive) envelope.message).failed();
 			} else {
-				system.forwardToDeathLetters(envelope);
+				system.forwardToDeadLetters(envelope);
 			}
 		}
 	}

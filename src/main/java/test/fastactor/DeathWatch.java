@@ -4,7 +4,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import test.fastactor.DeathWatch.Terminated;
 
 
-public interface DeathWatch extends ActorContext {
+interface DeathWatch extends ActorContext {
 
 	/**
 	 * Message send to the actor to confirm completion of the {@link ActorContext#watch(ActorRef)}
@@ -30,7 +30,7 @@ public interface DeathWatch extends ActorContext {
 
 		@Override
 		public boolean processIf(final DeathWatch cell) {
-			return !cell.watchees().contains(ref.uuid);
+			return !cell.watchees().contains(ref.uuid());
 		}
 	}
 
@@ -78,16 +78,28 @@ public interface DeathWatch extends ActorContext {
 		}
 	}
 
+	/**
+	 * @return UUIDs of the actors who are watching this one.
+	 */
 	LongOpenHashSet watchers();
 
+	/**
+	 * @return UUIDs of the actors who are watched by this one.
+	 */
 	LongOpenHashSet watchees();
 
+	/**
+	 * Watch the {@link ActorCell} given by the {@link ActorRef}.
+	 */
 	@Override
 	default ActorRef watch(final ActorRef watchee) {
 		new WatchProtocol(self(), watchee).initiate();
 		return watchee;
 	}
 
+	/**
+	 * Unwatch the {@link ActorCell} given by the {@link ActorRef}.
+	 */
 	@Override
 	default ActorRef unwatch(final ActorRef watchee) {
 		new UnwatchProtocol(self(), watchee).initiate();

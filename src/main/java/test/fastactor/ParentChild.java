@@ -1,6 +1,6 @@
 package test.fastactor;
 
-import static test.fastactor.ActorSystem.ZERO;
+import static test.fastactor.ActorSystem.ZERO_UUID;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
@@ -53,7 +53,7 @@ class ParentChildProtocol implements Protocol {
 	/**
 	 * From child to parent. Tell parent to add child as its own. When parent approves, the
 	 * {@link AddChildConfirmation} is send to child. When parent already died or did not exist in
-	 * the first place, the {@link Directives#STOP} is send to the child instead.
+	 * the first place, the {@link InternalDirectives#STOP} is send to the child instead.
 	 */
 	final class AddChild implements Directive {
 
@@ -65,7 +65,7 @@ class ParentChildProtocol implements Protocol {
 
 		@Override
 		public void failed() {
-			child.tell(Directives.STOP, parent);
+			child.tell(InternalDirectives.STOP, parent);
 		}
 	}
 
@@ -100,13 +100,13 @@ class ParentChildProtocol implements Protocol {
 	 * @return True if parent actor is a root, false otherwise
 	 */
 	private boolean isParentTheRootActor() {
-		return parent.uuid == ZERO;
+		return parent.uuid == ZERO_UUID;
 	}
 
 	@Override
 	public void initiate() {
 		if (isParentTheRootActor()) {
-			child.tell(Directives.START, child);
+			child.tell(InternalDirectives.START, child);
 		} else {
 			parent.tell(new AddChild(), child);
 		}

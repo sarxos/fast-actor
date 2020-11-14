@@ -5,8 +5,8 @@ import static test.fastactor.ActorCell.DeliveryStatus.REJECTED;
 import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 import static test.fastactor.ActorCell.ProcessingStatus.CONTINUE;
 import static test.fastactor.ActorRef.noSender;
-import static test.fastactor.Directives.DISCARD;
-import static test.fastactor.Directives.STOP;
+import static test.fastactor.InternalDirectives.DISCARD;
+import static test.fastactor.InternalDirectives.STOP;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -18,8 +18,10 @@ import java.util.function.Supplier;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import test.fastactor.Directive.ExecutionMode;
-import test.fastactor.Directives.Stop;
+import test.fastactor.InternalDirectives.StopAck;
 import test.fastactor.dsl.Base;
+import test.fastactor.message.ActorIdentity;
+import test.fastactor.message.Unhandled;
 
 
 /**
@@ -117,7 +119,12 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	}
 
 	private void unhandled(final Object message) {
-		System.out.println("Unhandled: " + message); // TODO implement this properly
+
+		final var target = self();
+		final var sender = sender();
+		final var unhandled = new Unhandled(message, target, sender);
+
+		system.emit(unhandled, sender);
 	}
 
 	private void invokeActorConstructor() {
@@ -389,10 +396,10 @@ class ActorStopCoordinator extends Actor implements Base {
 	@Override
 	public Receive receive() {
 		return super.receive()
-			.match(Stop.Ack.class, this::onStopAck);
+			.match(StopAck.class, this::onStopAck);
 	}
 
-	public void onStopAck(final Stop.Ack ack) {
+	public void onStopAck(final StopAck ack) {
 		if (allChildrenDied()) {
 			tell(DISCARD, parent, noSender());
 			stop();
@@ -404,7 +411,7 @@ class ActorStopCoordinator extends Actor implements Base {
 	}
 }
 
-interface Directives {
+interface InternalDirectives {
 
 	final static Directive START = new Start();
 	final static Directive STOP = new Stop();
@@ -414,7 +421,9 @@ interface Directives {
 	 * Mark cell as initialized and start accepting messages.
 	 */
 	class Start implements Directive {
-		public @Override void approved(final ActorCell<?> cell) {
+
+		@Override
+		public void approved(final ActorCell<?> cell) {
 			cell.start();
 		}
 	}
@@ -427,12 +436,12 @@ interface Directives {
 		@Override
 		public void approved(final ActorCell<?> cell) {
 			cell.stop();
-			cell.reply(Ack.INSTANCE);
+			cell.reply(StopAck.INSTANCE);
 		}
+	}
 
-		static class Ack {
-			final static Ack INSTANCE = new Ack();
-		}
+	class StopAck {
+		final static StopAck INSTANCE = new StopAck();
 	}
 
 	/**
@@ -447,6 +456,19 @@ interface Directives {
 			final var system = cell.system();
 			final var uuid = cell.uuid();
 			system.discard(uuid);
+		}
+	}
+
+	class Identify implements Directive {
+
+		@Override
+		public void approved(ActorCell<? extends Actor> cell) {
+			cell.reply(new ActorIdentity(cell.self()));
+		}
+
+		@Override
+		public ExecutionMode mode() {
+			return ExecutionMode.RUN_IN_ORDER;
 		}
 	}
 }

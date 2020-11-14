@@ -1,7 +1,7 @@
 package test.fastactor;
 
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 
 
 /**
@@ -11,7 +11,7 @@ import java.util.concurrent.CompletableFuture;
  */
 public class ActorRef {
 
-	private static final ActorRef NO_REF = new ActorRef(null, ActorSystem.ZERO);
+	private static final ActorRef NO_REF = new ActorRef(null, ActorSystem.ZERO_UUID);
 
 	final ActorSystem system;
 	final long uuid;
@@ -47,14 +47,8 @@ public class ActorRef {
 		system.tell(message, this.uuid, sender.uuid);
 	}
 
-	@SuppressWarnings({ "unchecked" })
-	public <R> CompletableFuture<R> ask(final Object message) {
-
-		final var target = this.uuid;
-		final var ask = system.ask(message, target);
-		final var future = ask.future;
-
-		return (CompletableFuture<R>) future;
+	public <R> CompletionStage<R> ask(final Object message) {
+		return system.ask(message, this);
 	}
 
 	@Override

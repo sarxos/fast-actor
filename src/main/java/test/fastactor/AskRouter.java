@@ -8,19 +8,20 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 class AskRouter extends Actor {
 
-	public static final class Ask {
+	static final class Ask<R> {
 
-		final CompletableFuture<Object> future = new CompletableFuture<>();
+		final CompletableFuture<R> completion = new CompletableFuture<>();
 		final Object message;
-		final long target;
+		final ActorRef target;
 
-		public Ask(final Object message, final long target) {
+		public Ask(final Object message, final ActorRef target) {
 			this.message = message;
 			this.target = target;
 		}
 
+		@SuppressWarnings("unchecked")
 		void complete(final Object result) {
-			future.complete(result);
+			completion.complete((R) result);
 		}
 	}
 
@@ -37,7 +38,7 @@ class AskRouter extends Actor {
 			.match(AskDone.class, this::onAskDone);
 	}
 
-	private void onAsk(final Ask ask) {
+	private void onAsk(final Ask<?> ask) {
 
 		final var system = context().system();
 		final var sender = context().self().uuid;
@@ -50,8 +51,9 @@ class AskRouter extends Actor {
 
 	private void onAskDone(final AskDone done) {
 
-		final var ref = context().sender();
-		final var uuid = ref.uuid;
+		final var uuid = context()
+			.sender()
+			.uuid();
 
 		busy.remove(uuid);
 		free.push(uuid);
@@ -63,11 +65,9 @@ class AskRouter extends Actor {
 			return free.popLong();
 		}
 
-		final var ref = context().actorOf(ASK_ACTOR);
-		final var uuid = ref.uuid;
-
-		return uuid;
-
+		return context()
+			.actorOf(ASK_ACTOR)
+			.uuid();
 	}
 
 	static class AskDone {
@@ -75,7 +75,7 @@ class AskRouter extends Actor {
 
 	static class AskRoutee extends Actor {
 
-		private Ask ask;
+		private Ask<?> ask;
 
 		@Override
 		public Receive receive() {
@@ -84,13 +84,13 @@ class AskRouter extends Actor {
 				.matchAny(this::onResponse);
 		}
 
-		public void onAsk(final Ask ask) {
+		public void onAsk(final Ask<?> ask) {
 
 			this.ask = ask;
 
 			final var message = ask.message;
 			final var target = ask.target;
-			final var sender = context().uuid();
+			final var sender = context().self();
 			final var system = context().system();
 
 			system.tell(message, target, sender);
