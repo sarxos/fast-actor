@@ -58,7 +58,7 @@ class ParentChildProtocol implements Protocol {
 	final class AddChild implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.addChild(child);
 			child.tell(new AddChildConfirmation(), parent);
 		}
@@ -78,7 +78,7 @@ class ParentChildProtocol implements Protocol {
 	final class AddChildConfirmation implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.start();
 		}
 
@@ -91,7 +91,7 @@ class ParentChildProtocol implements Protocol {
 	final class RemoveChild implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.removeChild(child);
 		}
 	}

@@ -1,7 +1,5 @@
 package test.fastactor;
 
-import static java.util.concurrent.locks.LockSupport.park;
-import static java.util.concurrent.locks.LockSupport.unpark;
 import static test.fastactor.ActorCell.DeliveryStatus.REJECTED;
 import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 
@@ -11,6 +9,7 @@ import java.util.LinkedList;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
+import java.util.concurrent.locks.LockSupport;
 
 import org.jctools.maps.NonBlockingHashMapLong;
 import org.jctools.queues.MpscLinkedQueue;
@@ -50,7 +49,7 @@ public class ActorThread extends Thread {
 
 	/**
 	 * The {@link ActorThreadPool} stores {@link ActorThread} instances in the list. This is a
-	 * positional index of this {@link ActorThread} in this list.
+	 * positional index of this {@link ActorThread} in the list.
 	 */
 	final int index;
 
@@ -102,7 +101,7 @@ public class ActorThread extends Thread {
 			processActiveCells();
 
 			if (active.isEmpty()) {
-				park(this);
+				LockSupport.park(this);
 			}
 		}
 	}
@@ -175,11 +174,11 @@ public class ActorThread extends Thread {
 	 * active this operation will not make it inactive, which means that all messages which were
 	 * being delivered, will be processed till the end regardless if given cell is docked here.
 	 *
-	 * @param id the {@link ActorCell} ID
+	 * @param uuid the {@link ActorCell} ID
 	 * @return The removed {@link ActorCell} or null when no cell with a given ID was docked here
 	 */
-	public ActorCell<? extends Actor> undock(final long id) {
-		return dockedCells.remove(id);
+	public ActorCell<? extends Actor> remove(final long uuid) {
+		return dockedCells.remove(uuid);
 	}
 
 	/**
@@ -213,7 +212,7 @@ public class ActorThread extends Thread {
 	 */
 	private void wakeUpWhen(final boolean modified) {
 		if (modified) {
-			unpark(this);
+			LockSupport.unpark(this);
 		}
 	}
 

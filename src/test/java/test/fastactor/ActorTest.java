@@ -3,6 +3,7 @@ package test.fastactor;
 import static org.awaitility.Awaitility.await;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -110,7 +111,7 @@ public class ActorTest {
 		await().until(() -> !system.pools
 			.values()
 			.stream()
-			.flatMap(pool -> pool.threads.stream())
+			.flatMap(pool -> Arrays.stream(pool.threads))
 			.flatMap(thread -> thread.dockedCells.keySet().stream())
 			.filter(uuid -> uuid == ref.uuid)
 			.findAny()
@@ -119,7 +120,7 @@ public class ActorTest {
 		await().until(() -> !system.pools
 			.values()
 			.stream()
-			.flatMap(pool -> pool.threads.stream())
+			.flatMap(pool -> Arrays.stream(pool.threads))
 			.flatMap(thread -> thread.active.keySet().stream())
 			.filter(uuid -> uuid == ref.uuid)
 			.findAny()

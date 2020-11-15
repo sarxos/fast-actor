@@ -43,8 +43,8 @@ public class DeathWatchTest {
 		final var watcher = system.actorOf(Props.create(WatcherActor::new));
 		final var watched = system.actorOf(Props.create(WatchedActor::new));
 
-		watcher.ask(Directives.IDENTIFY).toCompletableFuture().get(500, MILLISECONDS);
-		watched.ask(Directives.IDENTIFY).toCompletableFuture().get(500, MILLISECONDS);
+		watcher.ask(Directive.IDENTIFY).toCompletableFuture().get(500, MILLISECONDS);
+		watched.ask(Directive.IDENTIFY).toCompletableFuture().get(500, MILLISECONDS);
 
 		watcher.tell(new Watch(watched));
 
@@ -86,8 +86,8 @@ public class DeathWatchTest {
 		final var watcher = system.actorOf(Props.create(WatcherActor::new));
 		final var watched = system.actorOf(Props.create(WatchedActor::new));
 
-		watcher.ask(Directives.IDENTIFY).toCompletableFuture().get(500, MILLISECONDS);
-		watched.ask(Directives.IDENTIFY).toCompletableFuture().get(500, MILLISECONDS);
+		watcher.ask(Directive.IDENTIFY).toCompletableFuture().get(500, MILLISECONDS);
+		watched.ask(Directive.IDENTIFY).toCompletableFuture().get(500, MILLISECONDS);
 
 		watcher.tell(new Watch(watched));
 		watchAck.get(500, TimeUnit.MILLISECONDS);

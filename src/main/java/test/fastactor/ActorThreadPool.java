@@ -1,11 +1,7 @@
 package test.fastactor;
 
-import static java.util.Collections.unmodifiableList;
-import static java.util.stream.Collectors.toCollection;
+import static test.fastactor.Props.RUN_ON_ANY_THREAD;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.stream.IntStream;
 
@@ -13,15 +9,20 @@ import java.util.stream.IntStream;
 public class ActorThreadPool {
 
 	public static final String DEFAULT_THREAD_POOL_NAME = "default-thread-pool";
-
-	static final Random RANDOM = new Random();
+	public static final int DEFAULT_PARALLELIZM = Runtime.getRuntime().availableProcessors();
 
 	final ActorSystem system;
 	final String name;
 	final ActorThreadFactory factory;
 	final int parallelism;
-	final List<ActorThread> threads;
+	final ActorThread[] threads;
 	final CountDownLatch guard;
+
+	private int shift = 0;
+
+	ActorThreadPool(final ActorSystem system, final String name) {
+		this(system, name, DEFAULT_PARALLELIZM);
+	}
 
 	ActorThreadPool(final ActorSystem system, final String name, final int parallelism) {
 		this.system = system;
@@ -29,15 +30,15 @@ public class ActorThreadPool {
 		this.parallelism = parallelism;
 		this.factory = new ActorThreadFactory(name);
 		this.guard = new CountDownLatch(parallelism);
-		this.threads = unmodifiableList(createThreads());
+		this.threads = createThreads();
 	}
 
-	private List<ActorThread> createThreads() {
+	private ActorThread[] createThreads() {
 		return IntStream
 			.range(0, parallelism)
 			.mapToObj(this::createThread)
 			.peek(Thread::start)
-			.collect(toCollection(() -> new ArrayList<>(parallelism)));
+			.toArray(ActorThread[]::new);
 	}
 
 	private ActorThread createThread(final int index) {
@@ -54,42 +55,33 @@ public class ActorThreadPool {
 		return name;
 	}
 
-	public <M> CellDockingInfo dock(final ActorCell<? extends Actor> cell) {
+	public ActorCellInfo prepareCellInfo(final Props<? extends Actor> props) {
 
-		final int threadIndex = RANDOM.nextInt(parallelism);
-		final ActorThread thread = threads.get(threadIndex);
+		final var uuid = system.generateNextUuid();
+		final var threadIndex = getDesiredThreadIndex(props);
+		final var thread = threads[threadIndex];
 
-		thread.dock(cell);
-
-		return new CellDockingInfo(this, threadIndex);
+		return new ActorCellInfo(this, thread, uuid);
 	}
 
-	/**
-	 * Discard cell with a given uid from this pool.
-	 *
-	 * @param uid the actor cell uid
-	 * @param threadIndex the thread index
-	 */
-	public void discard(final long uid, final int threadIndex) {
-		threadAt(threadIndex).undock(uid);
+	private int getDesiredThreadIndex(final Props<? extends Actor> props) {
+		if (props.threadIndex == RUN_ON_ANY_THREAD) {
+			return shift++ % parallelism;
+		} else {
+			return props.threadIndex % parallelism;
+		}
 	}
 
-	public <M> void deposit(final Envelope envelope, final int threadIndex) {
-		threadAt(threadIndex).deposit(envelope);
-	}
-
-	private ActorThread threadAt(final int threadIndex) {
-		return threads.get(threadIndex);
-	}
-
-	static class CellDockingInfo {
+	static class ActorCellInfo {
 
 		final ActorThreadPool pool;
-		final int threadIndex;
+		final ActorThread thread;
+		final long uuid;
 
-		public CellDockingInfo(final ActorThreadPool pool, final int threadIndex) {
+		public ActorCellInfo(final ActorThreadPool pool, final ActorThread thread, final long uuid) {
 			this.pool = pool;
-			this.threadIndex = threadIndex;
+			this.thread = thread;
+			this.uuid = uuid;
 		}
 
 		public ActorThreadPool getPool() {
@@ -99,12 +91,22 @@ public class ActorThreadPool {
 		public String getPoolName() {
 			return pool.getName();
 		}
+
+		public int getThreadIndex() {
+			return thread.index;
+		}
+
+		public long getUuid() {
+			return uuid;
+		}
 	}
 
 	public class Shutdown {
 
 		public Shutdown execute() {
-			threads.forEach(Thread::interrupt);
+			for (final var thread : threads) {
+				thread.interrupt();
+			}
 			return this;
 		}
 

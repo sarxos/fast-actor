@@ -76,4 +76,7 @@ public interface ActorContext {
 	ActorSystem system();
 
 	long uuid();
+
+	Props<?> props();
+
 }

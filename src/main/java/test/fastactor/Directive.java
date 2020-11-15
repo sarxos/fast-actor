@@ -9,7 +9,7 @@ import static test.fastactor.Directive.ExecutionMode.RUN_IMMEDIATELY;
  * be failed when target {@link ActorCell} does not exist or when it is not docked on the
  * {@link ActorThread}. A {@link Directive} implementor can specify a piece of code to be executed
  * whenever one of these situations occur. In case when it's successfully delivered to the target
- * cell, the {@link Directive#approved(ActorCell)} is invoked. Otherwise the
+ * cell, the {@link Directive#execute(ActorCell)} is invoked. Otherwise the
  * {@link Directive#failed()} is invoked. In both cases the execution is done by the very same
  * thread that processes ordinary messages.
  *
@@ -41,7 +41,7 @@ public interface Directive {
 	 * 
 	 * @param cell the {@link ActorCell} to execute this directive on
 	 */
-	default void approved(final ActorCell<? extends Actor> cell) {
+	default void execute(final ActorCell<? extends Actor> cell) {
 		// do nothing by default, but feel free to override
 	}
 
@@ -67,4 +67,7 @@ public interface Directive {
 	default ExecutionMode mode() {
 		return RUN_IMMEDIATELY;
 	}
+
+	final Directive IDENTIFY = new InternalDirectives.Identify();
+	final Directive POISON_PILL = new InternalDirectives.PoisonPill();
 }

@@ -4,12 +4,13 @@ import static test.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
 
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import org.jctools.maps.NonBlockingHashMap;
 import org.jctools.maps.NonBlockingHashMapLong;
 
-import test.fastactor.ActorThreadPool.CellDockingInfo;
+import test.fastactor.ActorThreadPool.ActorCellInfo;
 import test.fastactor.AskRouter.Ask;
 import test.fastactor.DeadLetters.DeadLetter;
 
@@ -24,8 +25,9 @@ public class ActorSystem {
 	private static final int DEFAULT_THROUGHPUT = 10;
 
 	final NonBlockingHashMap<String, ActorThreadPool> pools = new NonBlockingHashMap<>(1);
-	final NonBlockingHashMapLong<CellDockingInfo> cells = new NonBlockingHashMapLong<>();
+	final NonBlockingHashMapLong<ActorCellInfo> cells = new NonBlockingHashMapLong<>();
 	final ActorRef zeroRef = new ActorRef(this, ZERO_UUID);
+	final AtomicLong uuidGenerator = new AtomicLong(0);
 
 	final String name;
 	final int throughput;
@@ -85,32 +87,32 @@ public class ActorSystem {
 	<A extends Actor> ActorRef actorOf(final Props<A> props, final long parent) {
 
 		final var pool = getPoolFor(props).orElseThrow(poolNotFoundError(props));
+		final var info = pool.prepareCellInfo(props);
+		final var cell = new ActorCell<A>(this, props, info, parent);
+		final var uuid = info.uuid;
 
-		do {
+		info.thread.dock(cell);
 
-			final var cell = new ActorCell<A>(this, props, parent);
-			final var uuid = cell.uuid();
+		if (cells.put(uuid, info) == null) {
+			cell.setup();
+		} else {
+			throw new IllegalStateException("Cell wil ID " + uuid + " already exists in the system");
+		}
 
-			final var info = pool.dock(cell);
-
-			if (cells.putIfAbsent(uuid, info) != null) {
-				pool.discard(uuid, info.threadIndex);
-			} else {
-				return cell.setup();
-			}
-
-		} while (true);
+		return cell.self();
 	}
 
 	void discard(final long uuid) {
 
 		final var info = getDockingInfoFor(uuid).orElseThrow(cellNotFoundError(uuid));
-		final var threadIndex = info.threadIndex;
-		final var threadPool = info.pool;
+		final var thread = info.thread;
 
-		threadPool.discard(uuid, threadIndex);
-
+		thread.remove(uuid);
 		cells.remove(uuid);
+	}
+
+	long generateNextUuid() {
+		return uuidGenerator.incrementAndGet();
 	}
 
 	/**
@@ -134,14 +136,12 @@ public class ActorSystem {
 	public void tell(final Object message, final ActorRef target, final ActorRef sender) {
 
 		final var envelope = new Envelope(message, sender, target);
-		final var info = cells.get(target.uuid());
+		final var info = cells.get(target.uuid);
 
 		if (info == null) {
 			forwardToDeadLetters(envelope);
 		} else {
-			final var threadPool = info.getPool();
-			final var threadIndex = info.threadIndex;
-			threadPool.deposit(envelope, threadIndex);
+			info.thread.deposit(envelope);
 		}
 	}
 
@@ -198,12 +198,12 @@ public class ActorSystem {
 		tell(InternalDirectives.STOP, target, noSender());
 	}
 
-	private Optional<CellDockingInfo> getDockingInfoFor(final long uuid) {
+	private Optional<ActorCellInfo> getDockingInfoFor(final long uuid) {
 		return Optional.ofNullable(cells.get(uuid));
 	}
 
 	private Optional<ActorThreadPool> getPoolFor(final Props<? extends Actor> props) {
-		return getPoolFor(props.getThreadPoolName());
+		return getPoolFor(props.getThreadPool());
 	}
 
 	private Optional<ActorThreadPool> getPoolFor(final String poolName) {
@@ -211,7 +211,7 @@ public class ActorSystem {
 	}
 
 	private static Supplier<RuntimeException> poolNotFoundError(final Props<? extends Actor> props) {
-		return poolNotFoundError(props.getThreadPoolName());
+		return poolNotFoundError(props.getThreadPool());
 	}
 
 	private static Supplier<RuntimeException> poolNotFoundError(final String poolName) {

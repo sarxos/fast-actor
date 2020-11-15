@@ -173,7 +173,7 @@ class WatchProtocol implements Protocol {
 	private final class InternalWatch implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.addWatcher(watcher);
 			watcher.tell(new InternalWatchAck(), watchee);
 			watcher.tell(new DeathWatch.WatchAck(watchee), watchee);
@@ -188,7 +188,7 @@ class WatchProtocol implements Protocol {
 	private final class InternalWatchAck implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.addWatchee(watchee);
 		}
 
@@ -200,7 +200,7 @@ class WatchProtocol implements Protocol {
 	private final class InternalUnwatchFallback implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.removeWatcher(watcher);
 		}
 	}
@@ -224,7 +224,7 @@ class UnwatchProtocol implements Protocol {
 	private final class InternalUnwatch implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.removeWatcher(watcher);
 			watcher.tell(new InternalUnwatchAck(), watchee);
 			watcher.tell(new DeathWatch.UnwatchAck(watchee), watchee);
@@ -240,7 +240,7 @@ class UnwatchProtocol implements Protocol {
 	private final class InternalUnwatchAck implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.removeWatchee(watchee);
 		}
 
@@ -252,7 +252,7 @@ class UnwatchProtocol implements Protocol {
 	private final class InternalUnwatchFallback implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.removeWatcher(watcher);
 		}
 	}

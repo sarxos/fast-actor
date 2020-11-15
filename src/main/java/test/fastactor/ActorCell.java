@@ -11,11 +11,11 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.Queue;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import test.fastactor.ActorThreadPool.ActorCellInfo;
 import test.fastactor.Directive.ExecutionMode;
 import test.fastactor.InternalDirectives.StopAck;
 import test.fastactor.dsl.Base;
@@ -33,7 +33,6 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 
 	static final ThreadLocal<Deque<ActorContext>> CONTEXT = ThreadLocal.withInitial(ArrayDeque::new);
 
-	private final long uuid = UidGenerator.next();
 	private final Queue<Envelope> inbox = new LinkedList<>();
 	private final Deque<Consumer<Object>> behaviours = new ArrayDeque<>(0);
 	private final LongOpenHashSet children = new LongOpenHashSet(0);
@@ -41,6 +40,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	private final LongOpenHashSet watchees = new LongOpenHashSet(0);
 	private final Consumer<Object> unhandled = this::unhandled;
 
+	private final ActorCellInfo info;
 	private final ActorSystem system;
 	private final Props<A> props;
 	private final ActorRef parent;
@@ -51,10 +51,11 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	private Actor actor;
 	private ActorRef sender;
 
-	ActorCell(final ActorSystem system, final Props<A> props, final long parent) {
+	ActorCell(final ActorSystem system, final Props<A> props, final ActorCellInfo info, final long parent) {
 		this.system = system;
 		this.props = props;
-		this.self = new ActorRef(system, uuid);
+		this.info = info;
+		this.self = new ActorRef(system, info.uuid);
 		this.parent = new ActorRef(system, parent);
 	}
 
@@ -92,11 +93,8 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	 *
 	 * @return This cell's {@link ActorRef}
 	 */
-	ActorRef setup() {
-
+	void setup() {
 		setupParentChildRelation();
-
-		return self;
 	}
 
 	void start() {
@@ -162,7 +160,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 		final var directive = (Directive) envelope.message;
 
 		if (directive.mode() == ExecutionMode.RUN_IMMEDIATELY) {
-			directive.approved(this);
+			directive.execute(this);
 		} else {
 			inbox.offer(envelope);
 		}
@@ -236,7 +234,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 		return runWithSender(envelope.sender, () -> {
 
 			if (envelope.message instanceof Directive) {
-				((Directive) envelope.message).approved(this);
+				((Directive) envelope.message).execute(this);
 			} else {
 				behaviours
 					.peek()
@@ -345,7 +343,12 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 
 	@Override
 	public long uuid() {
-		return uuid;
+		return info.uuid;
+	}
+
+	@Override
+	public Props<?> props() {
+		return props;
 	}
 
 	public void reply(final Object message) {
@@ -353,21 +356,13 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	}
 
 	public String getThreadPoolName() {
-		return props.getThreadPoolName();
+		return props.getThreadPool();
 	}
 }
 
 /**
  * A random ID generator. Caller need to take special care to avoid duplicates.
  */
-class UidGenerator {
-
-	private static final AtomicLong NEXT_ID = new AtomicLong(0);
-
-	static long next() {
-		return NEXT_ID.incrementAndGet();
-	}
-}
 
 class ActorStopCoordinator extends Actor implements Base {
 
@@ -424,7 +419,7 @@ interface InternalDirectives {
 	class Start implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.start();
 		}
 	}
@@ -435,7 +430,7 @@ interface InternalDirectives {
 	class Stop implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			cell.stop();
 			cell.reply(StopAck.INSTANCE);
 		}
@@ -453,7 +448,7 @@ interface InternalDirectives {
 	class Discard implements Directive {
 
 		@Override
-		public void approved(final ActorCell<?> cell) {
+		public void execute(final ActorCell<?> cell) {
 			final var system = cell.system();
 			final var uuid = cell.uuid();
 			system.discard(uuid);
@@ -463,8 +458,21 @@ interface InternalDirectives {
 	class Identify implements Directive {
 
 		@Override
-		public void approved(ActorCell<? extends Actor> cell) {
+		public void execute(ActorCell<? extends Actor> cell) {
 			cell.reply(new ActorIdentity(cell.self()));
+		}
+
+		@Override
+		public ExecutionMode mode() {
+			return ExecutionMode.RUN_IN_ORDER;
+		}
+	}
+
+	class PoisonPill implements Directive {
+
+		@Override
+		public void execute(final ActorCell<? extends Actor> cell) {
+			cell.stop();
 		}
 
 		@Override
