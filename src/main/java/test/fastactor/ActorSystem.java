@@ -22,7 +22,11 @@ public class ActorSystem {
 	 */
 	public static final long ZERO_UUID = 0;
 
-	private static final int DEFAULT_THROUGHPUT = 100;
+	/**
+	 * Default throughput (up to how many messages to process from the same actor before switching
+	 * to the next one).
+	 */
+	public static final int DEFAULT_THROUGHPUT = 100;
 
 	final NonBlockingHashMap<String, ActorThreadPool> pools = new NonBlockingHashMap<>(1);
 	final NonBlockingHashMapLong<ActorCellInfo> cells = new NonBlockingHashMapLong<>();
@@ -31,7 +35,6 @@ public class ActorSystem {
 
 	final String name;
 	final int throughput;
-
 	final InternalActors internal;
 
 	public ActorSystem(final String name, final int throughput) {
@@ -39,7 +42,7 @@ public class ActorSystem {
 		this.name = name;
 		this.throughput = throughput;
 
-		addPool(new ActorThreadPool(this, DEFAULT_THREAD_POOL_NAME, 16));
+		addPool(new ActorThreadPool(this, DEFAULT_THREAD_POOL_NAME));
 
 		this.internal = new InternalActors();
 	}
@@ -135,13 +138,13 @@ public class ActorSystem {
 	 */
 	public void tell(final Object message, final ActorRef target, final ActorRef sender) {
 
-		final var envelope = new Envelope(target, message, sender);
-		final var info = cells.get(target.uuid);
+		final var envelope = new Envelope(message, target, sender);
+		final var cellInfo = cells.get(target.uuid);
 
-		if (info == null) {
+		if (cellInfo == null) {
 			forwardToDeadLetters(envelope);
 		} else {
-			info.thread.deposit(envelope);
+			cellInfo.thread.deposit(envelope);
 		}
 	}
 
@@ -226,7 +229,7 @@ public class ActorSystem {
 		return internal.askRouter;
 	}
 
-	public ActorRef refForDeathLetters() {
+	public ActorRef refForDeadLetters() {
 		return internal.deadLetters;
 	}
 

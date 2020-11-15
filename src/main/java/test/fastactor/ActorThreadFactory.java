@@ -12,13 +12,13 @@ public class ActorThreadFactory {
 		this.poolName = poolName;
 	}
 
-	public ActorThread newThread(final ActorSystem system, final int index) {
+	public ActorThread newThread(final ThreadGroup group, final ActorSystem system, final int index) {
 
 		final int number = counter.incrementAndGet();
 		final String systemName = system.getName();
 		final String name = getNextIncrementalName(systemName, systemName, number);
 
-		final ActorThread thread = new ActorThread(system, name, index);
+		final ActorThread thread = new ActorThread(group, system, name, index);
 		thread.setDaemon(false);
 		thread.setPriority(Thread.NORM_PRIORITY);
 

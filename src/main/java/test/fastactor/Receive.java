@@ -1,8 +1,8 @@
 package test.fastactor;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -12,7 +12,7 @@ public class Receive {
 
 	private static final Comparator<Matcher> COMPARATOR = (a, b) -> distance(b.type) - distance(a.type);
 
-	final List<Matcher> consumers = new LinkedList<>();
+	final List<Matcher> consumers = new ArrayList<>();
 
 	/**
 	 * Consume message by a given {@link Consumer} when message type matches the prtovide type.

@@ -17,7 +17,7 @@ class Envelope {
 	 */
 	final ActorRef sender;
 
-	Envelope(final ActorRef target, final Object message, final ActorRef sender) {
+	Envelope(final Object message, final ActorRef target, final ActorRef sender) {
 		this.message = message;
 		this.target = target;
 		this.sender = sender;

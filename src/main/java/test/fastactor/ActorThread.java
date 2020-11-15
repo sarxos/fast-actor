@@ -7,7 +7,6 @@ import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,6 +18,11 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 
 
 public class ActorThread extends Thread {
+
+	/**
+	 * How many idle loops {@link ActorThread} should perform before thread is parked.
+	 */
+	private static final int MAX_IDLE_LOOPS_COUNT = 100_000;
 
 	/**
 	 * Mapping between cell {@link UUID} and corresponding {@link ActorCell} instance.
@@ -46,8 +50,14 @@ public class ActorThread extends Thread {
 	 */
 	final MpscUnboundedArrayQueue<Envelope> externalQueue = new MpscUnboundedArrayQueue<>(4096);
 
+	/**
+	 * Is thread parked.
+	 */
 	final AtomicBoolean parked = new AtomicBoolean(true);
 
+	/**
+	 * The {@link ActorSystem} this {@link ActorThread} lives in.
+	 */
 	final ActorSystem system;
 
 	/**
@@ -61,18 +71,11 @@ public class ActorThread extends Thread {
 	 */
 	final int throughput;
 
-	ActorThread(final ActorSystem system, final String name, final int index) {
-		super(getCurrentThreadGroup(), name);
+	ActorThread(final ThreadGroup group, final ActorSystem system, final String name, final int index) {
+		super(group, name);
 		this.system = system;
 		this.index = index;
 		this.throughput = system.throughput;
-	}
-
-	private static ThreadGroup getCurrentThreadGroup() {
-		return Optional
-			.ofNullable(System.getSecurityManager())
-			.map(SecurityManager::getThreadGroup)
-			.orElse(Thread.currentThread().getThreadGroup());
 	}
 
 	@Override
@@ -81,31 +84,6 @@ public class ActorThread extends Thread {
 			onRun();
 		} finally {
 			onComplete();
-		}
-	}
-
-	static final int MAX_IDLE_LOOPS_COUNT = 100_000;
-
-	static class IdleLoopCounter {
-
-		final int max;
-		int counter;
-
-		public IdleLoopCounter(final int max) {
-			this.max = max;
-		}
-
-		void reset() {
-			counter = 0;
-		}
-
-		boolean canPark() {
-
-			final int c = counter++;
-			final int t = -((c - max) >> 31);
-			counter *= t;
-
-			return t == 0;
 		}
 	}
 
@@ -119,26 +97,38 @@ public class ActorThread extends Thread {
 			// move external messages to the temporary queue to avoid contention
 			// move internal messages to the temporary queue to avoid concurrent modification
 
-			externalQueue.drain(queue::offer);
-			internalQueue.forEach(queue::offer);
-			internalQueue.clear();
+			drain(externalQueue, queue);
+			drain(internalQueue, queue);
 
 			deliver(queue);
 
 			processActiveCells();
 
 			if (active.isEmpty()) {
-				if (idler.canPark()) {
+				if (idler.shouldBeParked()) {
 					parked.set(true);
 					park(this);
 				}
 			} else {
-				idler.reset();
+				idler.resetCounter();
 			}
 		}
 	}
 
+	private <T> void drain(final Queue<T> source, final Queue<T> target) {
+		do {
+			final T element = source.poll();
+			if (element == null) {
+				break;
+			} else {
+				target.offer(element);
+			}
+		} while (true);
+	}
+
 	private void deliver(final Queue<Envelope> queue) {
+
+		final var t = this;
 
 		for (;;) {
 
@@ -148,7 +138,7 @@ public class ActorThread extends Thread {
 			}
 
 			final var uuid = envelope.target.uuid;
-			final var cell = active.computeIfAbsent(uuid, this::findCell);
+			final var cell = active.computeIfAbsent(uuid, t::findCell);
 
 			deliver(envelope, cell);
 		}
@@ -279,5 +269,31 @@ public class ActorThread extends Thread {
 
 	private void onComplete() {
 		terminators.forEach(Runnable::run);
+	}
+
+	/**
+	 * Simple counter to count idle loops to decide if thread should be parked.
+	 */
+	private static class IdleLoopCounter {
+
+		final int max;
+		int counter;
+
+		IdleLoopCounter(final int max) {
+			this.max = max;
+		}
+
+		void resetCounter() {
+			counter = 0;
+		}
+
+		boolean shouldBeParked() {
+
+			final int c = counter++;
+			final int t = -((c - max) >> 31);
+			counter *= t;
+
+			return t == 0;
+		}
 	}
 }

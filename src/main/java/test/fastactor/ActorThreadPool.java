@@ -6,13 +6,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.stream.IntStream;
 
 
-public class ActorThreadPool {
+public class ActorThreadPool extends ThreadGroup {
 
 	public static final String DEFAULT_THREAD_POOL_NAME = "default-thread-pool";
 	public static final int DEFAULT_PARALLELIZM = Runtime.getRuntime().availableProcessors();
 
 	final ActorSystem system;
-	final String name;
 	final ActorThreadFactory factory;
 	final int parallelism;
 	final ActorThread[] threads;
@@ -25,8 +24,10 @@ public class ActorThreadPool {
 	}
 
 	ActorThreadPool(final ActorSystem system, final String name, final int parallelism) {
+
+		super(name);
+
 		this.system = system;
-		this.name = name;
 		this.parallelism = parallelism;
 		this.factory = new ActorThreadFactory(name);
 		this.guard = new CountDownLatch(parallelism);
@@ -43,16 +44,12 @@ public class ActorThreadPool {
 
 	private ActorThread createThread(final int index) {
 		return factory
-			.newThread(system, index)
+			.newThread(this, system, index)
 			.withTerminator(guard::countDown);
 	}
 
 	public Shutdown shutdown() {
 		return new Shutdown().execute();
-	}
-
-	public String getName() {
-		return name;
 	}
 
 	public ActorCellInfo prepareCellInfo(final Props<? extends Actor> props) {

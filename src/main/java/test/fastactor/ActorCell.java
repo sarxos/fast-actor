@@ -10,7 +10,6 @@ import static test.fastactor.InternalDirectives.STOP;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import test.fastactor.ActorThreadPool.ActorCellInfo;
@@ -171,13 +170,14 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	}
 
 	public DeliveryStatus deliver(final Envelope envelope) {
-		return runWithSender(envelope.sender, () -> {
-			if (envelope.message instanceof Directive) {
-				return deliverDirective(envelope);
-			} else {
-				return deliverMessage(envelope);
-			}
-		});
+
+		setSenderFrom(envelope);
+
+		if (envelope.message instanceof Directive) {
+			return deliverDirective(envelope);
+		} else {
+			return deliverMessage(envelope);
+		}
 	}
 
 	private DeliveryStatus deliverDirective(final Envelope envelope) {
@@ -256,19 +256,21 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 			return true; // last message
 		}
 
-		return runWithSender(envelope.sender, () -> {
+		setSenderFrom(envelope);
 
-			if (envelope.message instanceof Directive) {
-				((Directive) envelope.message).execute(this);
-			} else {
-				behaviours
-					.peek()
-					.accept(envelope.message);
-			}
+		if (envelope.message instanceof Directive) {
+			((Directive) envelope.message).execute(this);
+		} else {
+			behaviours
+				.peek()
+				.accept(envelope.message);
+		}
 
-			return Boolean.FALSE;
+		return false;
+	}
 
-		}).booleanValue();
+	private void setSenderFrom(final Envelope envelope) {
+		this.sender = envelope.sender;
 	}
 
 	@Override
@@ -319,15 +321,6 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 			system.actorOf(props);
 		} else {
 			self.tell(DISCARD, self);
-		}
-	}
-
-	private <T> T runWithSender(final ActorRef sender, final Supplier<T> run) {
-		this.sender = sender;
-		try {
-			return run.get();
-		} finally {
-			this.sender = null;
 		}
 	}
 
