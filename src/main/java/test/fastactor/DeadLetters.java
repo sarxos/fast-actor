@@ -29,6 +29,19 @@ public interface DeadLetters {
 		public ActorRef getSender() {
 			return sender;
 		}
+
+		@Override
+		public String toString() {
+			return new StringBuilder(getClass().getName())
+				.append("[ message = ")
+				.append(message.getClass().getName())
+				.append(", from = ")
+				.append(sender)
+				.append(", to = ")
+				.append(target)
+				.append("]")
+				.toString();
+		}
 	}
 }
 
@@ -41,6 +54,6 @@ class DeadLettersActor extends Actor implements Events {
 	}
 
 	private void onDeadLetter(final DeadLetter letter) {
-		emit(letter);
+		emitEvent(letter);
 	}
 }

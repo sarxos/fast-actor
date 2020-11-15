@@ -9,8 +9,6 @@ import static test.fastactor.InternalDirectives.STOP;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.LinkedList;
-import java.util.Queue;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -33,7 +31,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 
 	static final ThreadLocal<Deque<ActorContext>> CONTEXT = ThreadLocal.withInitial(ArrayDeque::new);
 
-	private final Queue<Envelope> inbox = new LinkedList<>();
+	private final Deque<Envelope> inbox = new ArrayDeque<>();
 	private final Deque<Consumer<Object>> behaviours = new ArrayDeque<>(0);
 	private final LongOpenHashSet children = new LongOpenHashSet(0);
 	private final LongOpenHashSet watchers = new LongOpenHashSet(0);
@@ -45,6 +43,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	private final Props<A> props;
 	private final ActorRef parent;
 	private final ActorRef self;
+	private final int hash;
 
 	private boolean started = false;
 	private boolean dead = false;
@@ -57,6 +56,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 		this.info = info;
 		this.self = new ActorRef(system, info.uuid);
 		this.parent = new ActorRef(system, parent);
+		this.hash = Long.hashCode(info.uuid);
 	}
 
 	static ActorContext getActiveContext() {
@@ -78,6 +78,31 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 				.get()
 				.pop();
 		}
+	}
+
+	@Override
+	public int hashCode() {
+		return hash;
+	}
+
+	@Override
+	public boolean equals(final Object obj) {
+
+		if (this == obj) {
+			return true;
+		}
+		if (obj == null) {
+			return false;
+		}
+		if (getClass() != obj.getClass()) {
+			return false;
+		}
+
+		return equals0((ActorCell<?>) obj);
+	}
+
+	private boolean equals0(final ActorCell<?> cell) {
+		return cell.info.uuid == this.info.uuid;
 	}
 
 	/**

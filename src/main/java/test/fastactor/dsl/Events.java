@@ -10,7 +10,7 @@ public interface Events extends InternalContext {
 	 *
 	 * @param type the type of event to be subscribed
 	 */
-	default void subscribe(final Class<?> type) {
+	default void subscribeEvent(final Class<?> type) {
 
 		final var self = context().self();
 		final var system = context().system();
@@ -38,7 +38,7 @@ public interface Events extends InternalContext {
 	 *
 	 * @param event the event to be emitted
 	 */
-	default void emit(final Object event) {
+	default void emitEvent(final Object event) {
 
 		final var self = context().self();
 		final var system = context().system();

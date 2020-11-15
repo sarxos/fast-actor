@@ -29,7 +29,7 @@ public class EventBusTest {
 
 			@Override
 			public void preStart() {
-				subscribe(TestEvent.class);
+				subscribeEvent(TestEvent.class);
 			}
 
 			@Override
@@ -66,7 +66,7 @@ public class EventBusTest {
 
 			@Override
 			public void preStart() {
-				subscribe(TestEvent.class);
+				subscribeEvent(TestEvent.class);
 			}
 
 			@Override

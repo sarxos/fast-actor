@@ -1,18 +1,19 @@
 package test.fastactor;
 
-import static test.fastactor.ActorCell.DeliveryStatus.REJECTED;
+import static java.util.concurrent.locks.LockSupport.park;
+import static java.util.concurrent.locks.LockSupport.unpark;
+import static test.fastactor.ActorCell.DeliveryStatus.ACCEPTED;
 import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.LinkedList;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
-import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.jctools.maps.NonBlockingHashMapLong;
-import org.jctools.queues.MpscLinkedQueue;
+import org.jctools.queues.MpscUnboundedArrayQueue;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 
@@ -38,12 +39,14 @@ public class ActorThread extends Thread {
 	/**
 	 * Queue to store messages from cells docked on this thread (internal communication).
 	 */
-	final Queue<Envelope> internalQueue = new LinkedList<>();
+	final Queue<Envelope> internalQueue = new ArrayDeque<>();
 
 	/**
 	 * Queue to store messages from cells docked on other threads (interthread communication).
 	 */
-	final MpscLinkedQueue<Envelope> externalQueue = new MpscLinkedQueue<>();
+	final MpscUnboundedArrayQueue<Envelope> externalQueue = new MpscUnboundedArrayQueue<>(4096);
+
+	final AtomicBoolean parked = new AtomicBoolean(true);
 
 	final ActorSystem system;
 
@@ -81,9 +84,35 @@ public class ActorThread extends Thread {
 		}
 	}
 
+	static final int MAX_IDLE_LOOPS_COUNT = 100_000;
+
+	static class IdleLoopCounter {
+
+		final int max;
+		int counter;
+
+		public IdleLoopCounter(final int max) {
+			this.max = max;
+		}
+
+		void reset() {
+			counter = 0;
+		}
+
+		boolean canPark() {
+
+			final int c = counter++;
+			final int t = -((c - max) >> 31);
+			counter *= t;
+
+			return t == 0;
+		}
+	}
+
 	private void onRun() {
 
-		final var queue = new LinkedList<Envelope>();
+		final var queue = new ArrayDeque<Envelope>();
+		final var idler = new IdleLoopCounter(MAX_IDLE_LOOPS_COUNT);
 
 		while (!isInterrupted()) {
 
@@ -96,34 +125,65 @@ public class ActorThread extends Thread {
 
 			deliver(queue);
 
-			queue.clear();
-
 			processActiveCells();
 
 			if (active.isEmpty()) {
-				LockSupport.park(this);
+				if (idler.canPark()) {
+					parked.set(true);
+					park(this);
+				}
+			} else {
+				idler.reset();
 			}
 		}
 	}
 
 	private void deliver(final Queue<Envelope> queue) {
-		for (final var envelope : queue) {
 
-			final var uuid = envelope.target.uuid();
-			final var cell = active.computeIfAbsent(uuid, this::find);
+		for (;;) {
+
+			final var envelope = queue.poll();
+			if (envelope == null) {
+				break;
+			}
+
+			final var uuid = envelope.target.uuid;
+			final var cell = active.computeIfAbsent(uuid, this::findCell);
 
 			deliver(envelope, cell);
 		}
 	}
 
-	private void deliver(final Envelope envelope, final ActorCell<? extends Actor> target) {
-		if (target == null || target.deliver(envelope) == REJECTED) {
-			if (envelope.message instanceof Directive) {
-				((Directive) envelope.message).failed();
-			} else {
-				system.forwardToDeadLetters(envelope);
-			}
+	private int deliver(final Envelope envelope, final ActorCell<? extends Actor> target) {
+
+		if (target == null) {
+			return noCellFoundForTarget(envelope, target);
 		}
+
+		final var status = target.deliver(envelope);
+
+		if (status == ACCEPTED) {
+			return 1;
+		}
+
+		if (envelope.message instanceof Directive) {
+			((Directive) envelope.message).failed();
+		} else {
+			system.forwardToDeadLetters(envelope);
+		}
+
+		return 0;
+	}
+
+	private int noCellFoundForTarget(final Envelope envelope, final ActorCell<? extends Actor> target) {
+
+		if (envelope.message instanceof Directive) {
+			((Directive) envelope.message).failed();
+		} else {
+			system.forwardToDeadLetters(envelope);
+		}
+
+		return 0;
 	}
 
 	/**
@@ -149,7 +209,7 @@ public class ActorThread extends Thread {
 	}
 
 	@SuppressWarnings("rawtypes")
-	private ActorCell find(final long uuid) {
+	private ActorCell findCell(final long uuid) {
 		return dockedCells.get(uuid);
 	}
 
@@ -202,7 +262,8 @@ public class ActorThread extends Thread {
 	 * @param queue the queue where it should be added
 	 */
 	private void deposit(final Envelope envelope, final Queue<Envelope> queue) {
-		wakeUpWhen(queue.offer(envelope));
+		queue.offer(envelope);
+		wakeUp();
 	}
 
 	/**
@@ -210,9 +271,9 @@ public class ActorThread extends Thread {
 	 *
 	 * @param modified
 	 */
-	private void wakeUpWhen(final boolean modified) {
-		if (modified) {
-			LockSupport.unpark(this);
+	private void wakeUp() {
+		if (parked.compareAndSet(true, false)) {
+			unpark(this);
 		}
 	}
 

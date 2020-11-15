@@ -27,10 +27,18 @@ public interface Base extends InternalContext {
 	}
 
 	default void tell(final Object message, final ActorRef target) {
-		system().tell(message, target, self());
+		target.tell(message, self());
 	}
 
 	default void tell(final Object message, final ActorRef target, final ActorRef sender) {
-		system().tell(message, target, sender);
+		target.tell(message, sender);
+	}
+
+	default void reply(final Object message) {
+		sender().tell(message, self());
+	}
+
+	default void forward(final Object message, final ActorRef target) {
+		target.tell(message, sender());
 	}
 }

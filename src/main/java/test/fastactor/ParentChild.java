@@ -99,13 +99,13 @@ class ParentChildProtocol implements Protocol {
 	/**
 	 * @return True if parent actor is a root, false otherwise
 	 */
-	private boolean isParentTheRootActor() {
+	private boolean isChildTheRootActor() {
 		return parent.uuid == ZERO_UUID;
 	}
 
 	@Override
 	public void initiate() {
-		if (isParentTheRootActor()) {
+		if (isChildTheRootActor()) {
 			child.tell(InternalDirectives.START, child);
 		} else {
 			parent.tell(new AddChild(), child);

@@ -22,7 +22,7 @@ public class ActorSystem {
 	 */
 	public static final long ZERO_UUID = 0;
 
-	private static final int DEFAULT_THROUGHPUT = 10;
+	private static final int DEFAULT_THROUGHPUT = 100;
 
 	final NonBlockingHashMap<String, ActorThreadPool> pools = new NonBlockingHashMap<>(1);
 	final NonBlockingHashMapLong<ActorCellInfo> cells = new NonBlockingHashMapLong<>();
@@ -135,7 +135,7 @@ public class ActorSystem {
 	 */
 	public void tell(final Object message, final ActorRef target, final ActorRef sender) {
 
-		final var envelope = new Envelope(message, sender, target);
+		final var envelope = new Envelope(target, message, sender);
 		final var info = cells.get(target.uuid);
 
 		if (info == null) {

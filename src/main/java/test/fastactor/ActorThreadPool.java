@@ -99,6 +99,22 @@ public class ActorThreadPool {
 		public long getUuid() {
 			return uuid;
 		}
+
+		@Override
+		public String toString() {
+			return new StringBuilder()
+				.append(getClass().getName())
+				.append("[ pool = ")
+				.append(getPoolName())
+				.append(", thread = ")
+				.append(thread.getName())
+				.append(", index = ")
+				.append(thread.index)
+				.append(", uuid = ")
+				.append(uuid)
+				.append(" ]")
+				.toString();
+		}
 	}
 
 	public class Shutdown {
