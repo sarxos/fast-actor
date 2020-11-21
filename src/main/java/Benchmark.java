@@ -11,7 +11,7 @@ import test.fastactor.dsl.Base;
 import test.fastactor.dsl.Events;
 
 
-public class Sender {
+public class Benchmark {
 
 	private static final int N = 1_000_000;
 

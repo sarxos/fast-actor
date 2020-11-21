@@ -45,7 +45,7 @@ public interface ActorContext {
 	 * @param props the {@link Props} object used to create child actor
 	 * @return The {@link ActorRef} which can be used to send message to newly created actor
 	 */
-	public <A extends Actor> ActorRef actorOf(final Props<A> props);
+	<A extends Actor> ActorRef actorOf(final Props<A> props);
 
 	/**
 	 * @param behaviour the reference to new message {@link Consumer}
