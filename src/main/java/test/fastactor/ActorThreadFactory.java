@@ -16,7 +16,7 @@ public class ActorThreadFactory {
 
 		final int number = counter.incrementAndGet();
 		final String systemName = system.getName();
-		final String name = getNextIncrementalName(systemName, systemName, number);
+		final String name = getNextIncrementalName(systemName, poolName, number);
 
 		final ActorThread thread = new ActorThread(group, system, name, index);
 		thread.setDaemon(false);

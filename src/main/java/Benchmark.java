@@ -13,7 +13,7 @@ import test.fastactor.dsl.Events;
 
 public class Benchmark {
 
-	private static final int N = 1_000_000;
+	private static final int N = 1_00;
 
 	public static void main(String[] args) throws InterruptedException, ExecutionException {
 

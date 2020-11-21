@@ -69,7 +69,9 @@ class AskRouter extends Actor {
 		final var uuid = free.popLong();
 		final var system = context.system();
 
-		return system.refFor(uuid);
+		// XXX PERF rework this class to hold ActorRef instead of long uuids
+
+		return system.find(uuid);
 
 	}
 

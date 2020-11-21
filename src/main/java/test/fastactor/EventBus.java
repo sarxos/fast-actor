@@ -141,7 +141,7 @@ class EventBusActor extends Actor implements Base {
 		final var type = subscribe.eventType;
 		final var subscriber = subscribe.subscriber;
 
-		getSubscribersFor(type).add(subscriber.uuid);
+		getSubscribersFor(type).add(subscriber.uuid());
 
 		subscriber.tell(new SubscribeAck(subscribe), self);
 	}
@@ -151,7 +151,7 @@ class EventBusActor extends Actor implements Base {
 		final var self = self();
 		final var type = unsubscribe.eventType;
 		final var subscriber = unsubscribe.subscriber;
-		final var uuid = subscriber.uuid;
+		final var uuid = subscriber.uuid();
 
 		getSubscribersFor(type).remove(uuid);
 
@@ -181,7 +181,7 @@ class EventBusActor extends Actor implements Base {
 		final var emitter = event.emitter;
 
 		return subscriber -> system()
-			.refFor(subscriber)
+			.find(subscriber)
 			.tell(value, emitter);
 	}
 

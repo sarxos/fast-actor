@@ -41,11 +41,18 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-  <groupId>org.awaitility</groupId>
-  <artifactId>awaitility</artifactId>
-  <version>4.0.3</version>
+      <groupId>org.awaitility</groupId>
+      <artifactId>awaitility</artifactId>
+      <version>4.0.3</version>
       <scope>test</scope>
-</dependency>
+    </dependency>
+    
+    <dependency>
+	    <groupId>org.openjdk.jol</groupId>
+	    <artifactId>jol-core</artifactId>
+	    <version>0.10</version>
+	</dependency>
+    
   </dependencies>
 
 </project>

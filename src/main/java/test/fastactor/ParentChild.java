@@ -11,17 +11,17 @@ public interface ParentChild extends ActorContext {
 
 	@Override
 	default <P extends Actor> ActorRef actorOf(final Props<P> props) {
-		final ActorRef child = system().actorOf(props, uuid());
+		final ActorRef child = system().actorOf(props, self());
 		addChild(child);
 		return child;
 	}
 
 	default boolean addChild(final ActorRef child) {
-		return children().add(child.uuid);
+		return children().add(child.uuid());
 	}
 
 	default boolean removeChild(final ActorRef child) {
-		return children().remove(child.uuid);
+		return children().remove(child.uuid());
 	}
 
 	/**
@@ -100,7 +100,7 @@ class ParentChildProtocol implements Protocol {
 	 * @return True if parent actor is a root, false otherwise
 	 */
 	private boolean isChildTheRootActor() {
-		return parent.uuid == ZERO_UUID;
+		return parent.uuid() == ZERO_UUID;
 	}
 
 	@Override

@@ -2,7 +2,6 @@ package test.fastactor;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.concurrent.CompletableFuture;
@@ -98,7 +97,7 @@ public class DeathWatchTest {
 		system.stop(watched);
 
 		assertThrows(TimeoutException.class, () -> terminated.get(500, MILLISECONDS));
-		assertNull(system.find(watched.uuid));
+		assertEquals(system.find(watched.uuid()), system.refForDeadLetters());
 	}
 
 	class Watch {

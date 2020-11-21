@@ -49,12 +49,12 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	private Actor actor;
 	private ActorRef sender;
 
-	ActorCell(final ActorSystem system, final Props<A> props, final ActorCellInfo info, final long parent) {
+	ActorCell(final ActorSystem system, final Props<A> props, final ActorCellInfo info, final ActorRef parent) {
 		this.system = system;
 		this.props = props;
 		this.info = info;
-		this.self = new ActorRef(system, info.uuid);
-		this.parent = new ActorRef(system, parent);
+		this.self = new ActorRef(system, info);
+		this.parent = parent;
 		this.hash = Long.hashCode(info.uuid);
 	}
 
@@ -270,7 +270,7 @@ public class ActorCell<A extends Actor> implements ActorContext, ParentChild, De
 	}
 
 	private void setSenderFrom(final Envelope envelope) {
-		this.sender = envelope.sender;
+		sender = envelope.sender;
 	}
 
 	@Override
@@ -403,7 +403,7 @@ class ActorStopCoordinator extends Actor implements Base {
 
 	private void tellChildToStop(final long child) {
 		system()
-			.refFor(child)
+			.find(child)
 			.tell(STOP, parent);
 	}
 

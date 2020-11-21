@@ -1,5 +1,7 @@
 package test.fastactor;
 
+import static java.lang.Thread.sleep;
+import static java.util.concurrent.locks.LockSupport.unpark;
 import static test.fastactor.Props.RUN_ON_ANY_THREAD;
 
 import java.util.concurrent.CountDownLatch;
@@ -32,6 +34,27 @@ public class ActorThreadPool extends ThreadGroup {
 		this.factory = new ActorThreadFactory(name);
 		this.guard = new CountDownLatch(parallelism);
 		this.threads = createThreads();
+
+		final Thread observer = new Thread(this, () -> {
+			for (;;) {
+
+				for (final ActorThread thread : threads) {
+					unpark(thread);
+				}
+
+				try {
+					sleep(100);
+				} catch (InterruptedException e) {
+					return;
+				}
+			}
+		});
+
+		// observer.setName(name + "-observer");
+		observer.setDaemon(true);
+		observer.setPriority(Thread.MIN_PRIORITY);
+		observer.setDaemon(true);
+		observer.start();
 	}
 
 	private ActorThread[] createThreads() {

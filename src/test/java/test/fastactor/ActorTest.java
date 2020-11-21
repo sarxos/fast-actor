@@ -106,14 +106,14 @@ public class ActorTest {
 		final ActorRef ref = system.actorOf(Props.create(TestActor::new));
 
 		await().until(() -> !system.cells
-			.containsKey(ref.uuid));
+			.containsKey(ref.uuid()));
 
 		await().until(() -> !system.pools
 			.values()
 			.stream()
 			.flatMap(pool -> Arrays.stream(pool.threads))
 			.flatMap(thread -> thread.dockedCells.keySet().stream())
-			.filter(uuid -> uuid == ref.uuid)
+			.filter(uuid -> uuid == ref.uuid())
 			.findAny()
 			.isPresent());
 
@@ -122,7 +122,7 @@ public class ActorTest {
 			.stream()
 			.flatMap(pool -> Arrays.stream(pool.threads))
 			.flatMap(thread -> thread.active.keySet().stream())
-			.filter(uuid -> uuid == ref.uuid)
+			.filter(uuid -> uuid == ref.uuid())
 			.findAny()
 			.isPresent());
 	}
@@ -131,7 +131,7 @@ public class ActorTest {
 	public void test_deathLetter() throws Exception {
 
 		final var system = ActorSystem.create("xyz");
-		final var nonExisting = system.refFor(99999L);
+		final var nonExisting = system.find(99999L);
 
 		system.tell("aaa", nonExisting, nonExisting);
 

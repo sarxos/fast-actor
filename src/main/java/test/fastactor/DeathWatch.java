@@ -52,7 +52,7 @@ interface DeathWatch extends ActorContext {
 
 		@Override
 		public boolean processIf(final DeathWatch cell) {
-			return cell.watchees().contains(ref.uuid);
+			return cell.watchees().contains(ref.uuid());
 		}
 	}
 
@@ -74,7 +74,7 @@ interface DeathWatch extends ActorContext {
 
 		@Override
 		public boolean processIf(final DeathWatch cell) {
-			return cell.watchees().contains(ref.uuid);
+			return cell.watchees().contains(ref.uuid());
 		}
 	}
 
@@ -107,11 +107,11 @@ interface DeathWatch extends ActorContext {
 	}
 
 	default boolean addWatcher(final ActorRef ref) {
-		return watchers().add(ref.uuid);
+		return watchers().add(ref.uuid());
 	}
 
 	default boolean removeWatcher(final ActorRef ref) {
-		return watchers().remove(ref.uuid);
+		return watchers().remove(ref.uuid());
 	}
 
 	default boolean hasWatchers() {
@@ -119,11 +119,11 @@ interface DeathWatch extends ActorContext {
 	}
 
 	default boolean addWatchee(final ActorRef ref) {
-		return watchees().add(ref.uuid);
+		return watchees().add(ref.uuid());
 	}
 
 	default boolean removeWatchee(final ActorRef ref) {
-		return watchees().remove(ref.uuid);
+		return watchees().remove(ref.uuid());
 	}
 
 	default boolean hasWatchees() {
@@ -139,8 +139,10 @@ interface DeathWatch extends ActorContext {
 
 		while (iterator.hasNext()) {
 
+			// XXX PERF rework this class to hold ActorRef instead of long uuids
+
 			final var watcherUuid = iterator.nextLong();
-			final var watcher = system.refFor(watcherUuid);
+			final var watcher = system.find(watcherUuid);
 
 			watcher.tell(terminated, self);
 		}
@@ -154,7 +156,7 @@ interface DeathWatch extends ActorContext {
 
 		while (iterator.hasNext()) {
 			final var uuid = iterator.nextLong();
-			final var watchee = new ActorRef(system, uuid);
+			final var watchee = system.find(uuid);
 			new UnwatchProtocol(watcher, watchee).initiate();
 		}
 	}

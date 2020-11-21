@@ -3,6 +3,8 @@ package test.fastactor;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
 
+import test.fastactor.ActorThreadPool.ActorCellInfo;
+
 
 /**
  * The class representing the basic actor communication channel.
@@ -12,15 +14,21 @@ import java.util.concurrent.CompletionStage;
 public class ActorRef {
 
 	final ActorSystem system;
+	final ActorThread thread;
 	final long uuid;
 
-	ActorRef(final ActorSystem system, final long uuid) {
+	ActorRef(final ActorSystem system, final ActorCellInfo info) {
 		this.system = system;
-		this.uuid = uuid;
+		this.thread = info.thread;
+		this.uuid = info.uuid;
 	}
 
 	public long uuid() {
 		return uuid;
+	}
+
+	public ActorThread dispatcher() {
+		return thread;
 	}
 
 	/**
@@ -44,7 +52,7 @@ public class ActorRef {
 
 	@Override
 	public String toString() {
-		return "fa://" + system.getName() + "/" + uuid;
+		return "fa://" + system.getName() + "/" + uuid();
 	}
 
 	@Override
@@ -52,7 +60,7 @@ public class ActorRef {
 		final int prime = 31;
 		int result = 1;
 		result = prime * result + system.name.hashCode();
-		result = prime * result + Long.hashCode(uuid);
+		result = prime * result + Long.hashCode(uuid());
 		return result;
 	}
 
@@ -73,6 +81,10 @@ public class ActorRef {
 	}
 
 	private boolean equals0(final ActorRef ref) {
-		return Objects.equals(system.name, ref.system.name) && uuid == ref.uuid;
+
+		final boolean sameSystemName = Objects.equals(system.name, ref.system.name);
+		final boolean sameUuid = uuid() == ref.uuid();
+
+		return sameSystemName && sameUuid;
 	}
 }

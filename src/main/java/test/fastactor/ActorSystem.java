@@ -30,7 +30,7 @@ public class ActorSystem {
 
 	final NonBlockingHashMap<String, ActorThreadPool> pools = new NonBlockingHashMap<>(1);
 	final NonBlockingHashMapLong<ActorCellInfo> cells = new NonBlockingHashMapLong<>();
-	final ActorRef zeroRef = new ActorRef(this, ZERO_UUID);
+	final ActorRef zero = new ActorRef(this, new ActorCellInfo(null, null, ZERO_UUID));
 	final AtomicLong uuidGenerator = new AtomicLong(0);
 
 	final String name;
@@ -69,7 +69,7 @@ public class ActorSystem {
 	 * @return New {@link ActorRef} which should be used to communicate with the actor
 	 */
 	public <A extends Actor> ActorRef actorOf(final Props<A> props) {
-		return actorOf(props, internal.user.uuid);
+		return actorOf(props, internal.user);
 	}
 
 	/**
@@ -79,15 +79,14 @@ public class ActorSystem {
 	 * @param uuid the actor uuid
 	 * @return {@link ActorRef} if actor exists in the system, or null otherwise
 	 */
-	public ActorRef find(final long uuid) {
-		if (cells.containsKey(uuid)) {
-			return new ActorRef(this, uuid);
-		} else {
-			return null;
-		}
+	ActorRef find(final long uuid) {
+		return Optional
+			.ofNullable(cells.get(uuid))
+			.map(info -> new ActorRef(this, info))
+			.orElse(refForDeadLetters());
 	}
 
-	<A extends Actor> ActorRef actorOf(final Props<A> props, final long parent) {
+	<A extends Actor> ActorRef actorOf(final Props<A> props, final ActorRef parent) {
 
 		final var pool = getPoolFor(props).orElseThrow(poolNotFoundError(props));
 		final var info = pool.prepareCellInfo(props);
@@ -139,12 +138,12 @@ public class ActorSystem {
 	public void tell(final Object message, final ActorRef target, final ActorRef sender) {
 
 		final var envelope = new Envelope(message, target, sender);
-		final var cellInfo = cells.get(target.uuid);
+		final var dispatcher = target.dispatcher();
 
-		if (cellInfo == null) {
+		if (dispatcher == null) {
 			forwardToDeadLetters(envelope);
 		} else {
-			cellInfo.thread.deposit(envelope);
+			dispatcher.deposit(envelope);
 		}
 	}
 
@@ -237,21 +236,17 @@ public class ActorSystem {
 		return internal.eventBus;
 	}
 
-	public ActorRef refFor(final long uuid) {
-		return new ActorRef(this, uuid);
-	}
-
 	public ActorRef noSender() {
-		return zeroRef;
+		return zero;
 	}
 
 	class InternalActors {
-		final ActorRef root = actorOf(Props.create(RootActor::new), ZERO_UUID);
-		final ActorRef user = actorOf(Props.create(UserActor::new), root.uuid);
-		final ActorRef system = actorOf(Props.create(SystemActor::new), root.uuid);
-		final ActorRef askRouter = actorOf(Props.create(AskRouter::new), root.uuid);
-		final ActorRef deadLetters = actorOf(Props.create(DeadLettersActor::new), root.uuid);
-		final ActorRef eventBus = actorOf(Props.create(EventBusActor::new), system.uuid);
+		final ActorRef root = actorOf(Props.create(RootActor::new), zero);
+		final ActorRef user = actorOf(Props.create(UserActor::new), root);
+		final ActorRef system = actorOf(Props.create(SystemActor::new), root);
+		final ActorRef askRouter = actorOf(Props.create(AskRouter::new), root);
+		final ActorRef deadLetters = actorOf(Props.create(DeadLettersActor::new), root);
+		final ActorRef eventBus = actorOf(Props.create(EventBusActor::new), system);
 	}
 }
 
