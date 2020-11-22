@@ -5,7 +5,6 @@ import static test.fastactor.ActorCell.DeliveryStatus.ACCEPTED;
 import static test.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 import static test.fastactor.ActorSystem.ZERO_UUID;
 
-import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Queue;
@@ -24,8 +23,6 @@ public class ActorThread extends Thread {
 	 * How many idle loops {@link ActorThread} should perform before thread is parked.
 	 */
 	private static final int MAX_IDLE_LOOPS_COUNT = 1_000;
-
-	private static final long DELAY = Duration.ofMillis(100).toNanos();
 
 	/**
 	 * Mapping between cell {@link UUID} and corresponding {@link ActorCell} instance.
@@ -102,46 +99,61 @@ public class ActorThread extends Thread {
 			// move external messages to the temporary queue to avoid contention
 			// move internal messages to the temporary queue to avoid concurrent modification
 
-			drain(externalQueue, queue);
-			drain(internalQueue, queue);
+			var busy = 0;
 
-			deliver(queue);
+			busy += drain(externalQueue, queue);
+			busy += drain(internalQueue, queue);
+			busy += deliver(queue);
+			busy += process();
 
-			processActiveCells();
-
-			if (active.isEmpty()) {
+			if (busy == 0) {
 				if (idler.shouldBeParked()) {
-					parked.value = true;
-					// LockSupport.parkNanos(this, DELAY);
-					LockSupport.park(this);
-					parked.value = false;
+					park();
+				} else {
+					spin();
 				}
 			} else {
-				idler.resetCounter();
+				idler.reset();
 			}
 		}
 	}
 
-	private <T> void drain(final Queue<T> source, final Queue<T> target) {
+	private void park() {
+		parked.value = true;
+		LockSupport.park(this);
+		parked.value = false;
+	}
+
+	private void spin() {
+		Thread.onSpinWait();
+	}
+
+	private <T> int drain(final Queue<T> source, final Queue<T> target) {
+		int count = 0;
 		do {
 			final T element = source.poll();
 			if (element == null) {
-				break;
+				return count;
 			} else {
-				target.offer(element);
+				if (target.offer(element)) {
+					count++;
+				}
 			}
 		} while (true);
 	}
 
-	private void deliver(final Queue<Envelope> queue) {
+	private int deliver(final Queue<Envelope> queue) {
 
-		final var t = this;
+		var t = this;
+		var i = 0;
 
 		for (;;) {
 
 			final var envelope = queue.poll();
 			if (envelope == null) {
-				break;
+				return i;
+			} else {
+				i++;
 			}
 
 			final var uuid = envelope.target.uuid();
@@ -192,9 +204,11 @@ public class ActorThread extends Thread {
 	 * empty after processing completion, the cell becomes inactive and can be removed from the
 	 * active cells map.
 	 */
-	private void processActiveCells() {
+	private int process() {
 
 		final var iterator = active.values().iterator();
+
+		var i = 0;
 
 		while (iterator.hasNext()) {
 
@@ -204,9 +218,12 @@ public class ActorThread extends Thread {
 			if (status == COMPLETE) {
 				iterator.remove();
 			} else {
+				i++;
 				// more iterations required
 			}
 		}
+
+		return i;
 	}
 
 	@SuppressWarnings("rawtypes")
@@ -296,7 +313,7 @@ public class ActorThread extends Thread {
 			this.max = max;
 		}
 
-		void resetCounter() {
+		void reset() {
 			counter = 0;
 		}
 
@@ -313,8 +330,8 @@ public class ActorThread extends Thread {
 	/**
 	 * Padded volatile boolean.
 	 */
-	public final static class VolatileBoolean {
-		// header 12b
+	@SuppressWarnings("unused")
+	private final static class VolatileBoolean { // header 12b
 		public volatile boolean value = false; // 13b
 		public volatile byte b010, b011, b012; // 16b
 		public volatile byte b020, b021, b022, b023, b024, b025, b026, b027; // 24b
