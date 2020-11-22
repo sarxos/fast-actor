@@ -240,6 +240,14 @@ public class ActorSystem {
 		return zero;
 	}
 
+	public void shutdown() {
+		pools
+			.values()
+			.stream()
+			.map(ActorThreadPool::shutdown)
+			.forEach(ActorThreadPool.Shutdown::awaitTermination);
+	}
+
 	class InternalActors {
 		final ActorRef root = actorOf(Props.create(RootActor::new), zero);
 		final ActorRef user = actorOf(Props.create(UserActor::new), root);

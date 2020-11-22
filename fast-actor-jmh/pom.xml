@@ -13,9 +13,9 @@
 
   <dependencies>
     <dependency>
-      <groupId>com.github.sarxos</groupId>
-      <artifactId>fast-actor</artifactId>
-      <version>0.0.1-SNAPSHOT</version>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>fast-actor-core</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>org.openjdk.jmh</groupId>
