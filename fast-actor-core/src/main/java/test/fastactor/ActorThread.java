@@ -22,7 +22,7 @@ public class ActorThread extends Thread {
 	/**
 	 * How many idle loops {@link ActorThread} should perform before thread is parked.
 	 */
-	private static final int MAX_IDLE_LOOPS_COUNT = 1_000;
+	static int maxIdleLoopsCount = 1024;
 
 	/**
 	 * Mapping between cell {@link UUID} and corresponding {@link ActorCell} instance.
@@ -33,7 +33,7 @@ public class ActorThread extends Thread {
 	 * The active cells are the ones which have at least one message in the inbox. This map is not
 	 * thread-safe, so please do not use outside the {@link ActorThread} it's referenced on.
 	 */
-	final Long2ObjectOpenHashMap<ActorCell<? extends Actor>> active = new Long2ObjectOpenHashMap<>();
+	final Long2ObjectOpenHashMap<ActorCell<? extends Actor>> activeCells = new Long2ObjectOpenHashMap<>();
 
 	/**
 	 * {@link Runnable}s which will be run after this {@link Thread} is completed.
@@ -55,7 +55,9 @@ public class ActorThread extends Thread {
 	 */
 	// final AtomicBoolean parked = new AtomicBoolean(true);
 
-	public final VolatileBoolean parked = new VolatileBoolean();
+	final VolatileBoolean parked = new VolatileBoolean(false);
+
+	// final VolatileBoolean running = new VolatileBoolean(true);
 
 	/**
 	 * The {@link ActorSystem} this {@link ActorThread} lives in.
@@ -92,9 +94,10 @@ public class ActorThread extends Thread {
 	private void onRun() {
 
 		final var queue = new ArrayDeque<Envelope>();
-		final var idler = new IdleLoopCounter(MAX_IDLE_LOOPS_COUNT);
+		final var idler = new IdleLoopCounter(maxIdleLoopsCount);
 
 		while (!isInterrupted()) {
+			// while (running.value) {
 
 			// move external messages to the temporary queue to avoid contention
 			// move internal messages to the temporary queue to avoid concurrent modification
@@ -121,6 +124,7 @@ public class ActorThread extends Thread {
 	private void park() {
 		parked.value = true;
 		LockSupport.park(this);
+		// LockSupport.parkNanos(this, 1_000_000); // 1ms
 		parked.value = false;
 	}
 
@@ -161,7 +165,7 @@ public class ActorThread extends Thread {
 				system.forwardToDeadLetters(envelope);
 			}
 
-			final var cell = active.computeIfAbsent(uuid, t::findCell);
+			final var cell = activeCells.computeIfAbsent(uuid, t::findCell);
 
 			deliver(envelope, cell);
 		}
@@ -206,13 +210,18 @@ public class ActorThread extends Thread {
 	 */
 	private int process() {
 
-		final var iterator = active.values().iterator();
+		final var iterator = activeCells.values().iterator();
 
 		var i = 0;
 
 		while (iterator.hasNext()) {
 
 			final var cell = iterator.next();
+			if (cell == null) {
+				// XXX this is edgy - there should not be null here, but there is
+				continue;
+			}
+
 			final var status = cell.process(throughput);
 
 			if (status == COMPLETE) {
@@ -290,7 +299,6 @@ public class ActorThread extends Thread {
 	 * @param modified
 	 */
 	private void wakeUp() {
-		// if (parked.compareAndSet(true, false)) {
 		if (parked.value) {
 			unpark(this);
 			parked.value = false;
@@ -301,12 +309,21 @@ public class ActorThread extends Thread {
 		terminators.forEach(Runnable::run);
 	}
 
+	public static void setMaxIdleLoopsCount(int maxIdleLoopsCount) {
+		ActorThread.maxIdleLoopsCount = maxIdleLoopsCount;
+	}
+
 	/**
-	 * Simple counter to count idle loops to decide if thread should be parked.
+	 * Simple counter to count idle loops to decide if {@link ActorThread} should be parked. The
+	 * {@link ActorThread} should not be parked immediately after it's free, but only after if
+	 * burned the {@value ActorThread#maxIdleLoopsCount} number of idle loops. This is to prevent it
+	 * from early parking which causes performance drops when thread is unparked. When thread is not
+	 * parked and it's idle cycling, the {@link Thread#onSpinWait()} method should be used to signal
+	 * the runtime that it is busy-waiting.
 	 */
 	private static class IdleLoopCounter {
 
-		final int max;
+		int max;
 		int counter;
 
 		IdleLoopCounter(final int max) {
@@ -317,6 +334,9 @@ public class ActorThread extends Thread {
 			counter = 0;
 		}
 
+		/**
+		 * @return True if {@link ActorThread} should be parked or false otherwise.
+		 */
 		boolean shouldBeParked() {
 
 			final int c = counter++;
@@ -332,7 +352,13 @@ public class ActorThread extends Thread {
 	 */
 	@SuppressWarnings("unused")
 	private final static class VolatileBoolean { // header 12b
+
 		public volatile boolean value = false; // 13b
+
+		VolatileBoolean(final boolean value) {
+			this.value = value;
+		}
+
 		public volatile byte b010, b011, b012; // 16b
 		public volatile byte b020, b021, b022, b023, b024, b025, b026, b027; // 24b
 		public volatile byte b030, b031, b032, b033, b034, b035, b036, b037; // 32b

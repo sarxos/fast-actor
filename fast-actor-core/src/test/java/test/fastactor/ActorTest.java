@@ -121,7 +121,7 @@ public class ActorTest {
 			.values()
 			.stream()
 			.flatMap(pool -> Arrays.stream(pool.threads))
-			.flatMap(thread -> thread.active.keySet().stream())
+			.flatMap(thread -> thread.activeCells.keySet().stream())
 			.filter(uuid -> uuid == ref.uuid())
 			.findAny()
 			.isPresent());
