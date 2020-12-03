@@ -1,14 +1,14 @@
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.LongAdder;
 
-import test.fastactor.Actor;
-import test.fastactor.ActorSystem;
-import test.fastactor.DeadLetters.DeadLetter;
-import test.fastactor.Directive;
-import test.fastactor.Props;
-import test.fastactor.Receive;
-import test.fastactor.dsl.Base;
-import test.fastactor.dsl.Events;
+import com.github.sarxos.fastactor.Actor;
+import com.github.sarxos.fastactor.ActorSystem;
+import com.github.sarxos.fastactor.Directive;
+import com.github.sarxos.fastactor.Props;
+import com.github.sarxos.fastactor.Receive;
+import com.github.sarxos.fastactor.DeadLetters.DeadLetter;
+import com.github.sarxos.fastactor.dsl.Base;
+import com.github.sarxos.fastactor.dsl.Events;
 
 
 public class Benchmark {
