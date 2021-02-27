@@ -2,91 +2,73 @@ package com.github.sarxos.fastactor;
 
 import static com.github.sarxos.fastactor.Props.RUN_ON_ANY_THREAD;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.stream.IntStream;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.function.Supplier;
 
 
 public class ActorThreadPool extends ThreadGroup {
 
-	public static final String DEFAULT_THREAD_POOL_NAME = "default-thread-pool";
-	public static final int DEFAULT_PARALLELIZM = Runtime.getRuntime().availableProcessors();
+	private final ActorThreadFactory factory;
 
-	final ActorSystem system;
-	final ActorThreadFactory factory;
-	final int parallelism;
-	final ActorThread[] threads;
-	final CountDownLatch guard;
-
+	private int parallelism;
+	private ActorThread[] threads;
 	private int shift = 0;
 
-	ActorThreadPool(final ActorSystem system, final String name) {
-		this(system, name, DEFAULT_PARALLELIZM);
-	}
-
-	ActorThreadPool(final ActorSystem system, final String name, final int parallelism) {
-
+	public ActorThreadPool(final String name) {
 		super(name);
-
-		this.system = system;
-		this.parallelism = parallelism;
 		this.factory = new ActorThreadFactory(name);
-		this.guard = new CountDownLatch(parallelism);
-		this.threads = createThreads();
-
-		final Thread observer = new Thread(this, () -> {
-			for (;;) {
-
-				for (final ActorThread thread : threads) {
-					// LockSupport.unpark(thread);
-				}
-
-				try {
-					Thread.sleep(100);
-				} catch (InterruptedException e) {
-					return;
-				}
-			}
-		});
-
-		// observer.setName(name + "-observer");
-		observer.setDaemon(true);
-		observer.setPriority(Thread.MIN_PRIORITY);
-		observer.setDaemon(true);
-		observer.start();
 	}
 
-	private ActorThread[] createThreads() {
-		return IntStream
-			.range(0, parallelism)
-			.mapToObj(this::createThread)
-			.peek(Thread::start)
-			.toArray(ActorThread[]::new);
+	void start(final ActorSystem system) {
+
+		this.parallelism = system.parallelism;
+		this.threads = new ActorThread[parallelism];
+
+		for (int index = 0; index < parallelism; index++) {
+			threads[index] = newThread(system, index);
+		}
+
+		Arrays
+			.stream(threads)
+			.forEach(Thread::start);
 	}
 
-	private ActorThread createThread(final int index) {
-		return factory
-			.newThread(this, system, index)
-			.withTerminator(guard::countDown);
+	/**
+	 * For unit tests only!
+	 *
+	 * @return Threads allocated in this pool.
+	 */
+	ActorThread[] getThreads() {
+		return threads;
+	}
+
+	private ActorThread newThread(final ActorSystem system, final int index) {
+		return factory.newThread(this, system, index);
 	}
 
 	public Shutdown shutdown() {
 		return new Shutdown().execute();
 	}
 
-	public ActorCellInfo prepareCellInfo(final Props<? extends Actor> props) {
+	public ActorCellInfo prepareCellInfo(final ActorSystem system, final Props<? extends Actor> props) {
 
 		final var uuid = system.generateNextUuid();
-		final var threadIndex = getDesiredThreadIndex(props);
-		final var thread = threads[threadIndex];
+		final var index = getThreadIndex(props);
+		final var thread = threads[index];
 
 		return new ActorCellInfo(this, thread, uuid);
 	}
 
-	private int getDesiredThreadIndex(final Props<? extends Actor> props) {
-		if (props.threadIndex == RUN_ON_ANY_THREAD) {
-			return shift++ % parallelism;
+	private int getThreadIndex(final Props<? extends Actor> props) {
+
+		final var i = props.threadIndex;
+		final var p = parallelism;
+
+		if (i == RUN_ON_ANY_THREAD) {
+			return shift++ % p;
 		} else {
-			return props.threadIndex % parallelism;
+			return i % p;
 		}
 	}
 
@@ -138,18 +120,64 @@ public class ActorThreadPool extends ThreadGroup {
 	public class Shutdown {
 
 		public Shutdown execute() {
-			for (final var thread : threads) {
-				thread.interrupt();
+
+			for (int i = 0; i < threads.length; i++) {
+				final var t = threads[i];
+				if (t != null) {
+					t.interrupt();
+				}
 			}
+
 			return this;
 		}
 
 		public void awaitTermination() {
 			try {
-				guard.await();
+				do {
+					if (isAnyAlive(threads)) {
+						Thread.onSpinWait();
+						Thread.sleep(10);
+					} else {
+						return;
+					}
+				} while (true);
 			} catch (InterruptedException e) {
 				return;
 			}
 		}
+
+		private boolean isAnyAlive(final Thread[] threads) {
+			for (int i = 0; i < threads.length; i++) {
+				if (threads[i].isAlive()) {
+					return true;
+				}
+			}
+			return false;
+		}
+	}
+}
+
+class AtomicActorThreadsArray extends AtomicReferenceArray<ActorThread> {
+
+	private static final long serialVersionUID = 1L;
+
+	public AtomicActorThreadsArray(int length) {
+		super(length);
+	}
+
+	public ActorThread getOrCompute(final int i, final Supplier<ActorThread> supplier) {
+
+		final ActorThread thread;
+		final ActorThread tmp = get(i);
+
+		if (tmp == null) {
+			if (compareAndSet(i, null, thread = supplier.get())) {
+				return thread;
+			} else {
+				return get(i);
+			}
+		}
+
+		return tmp;
 	}
 }

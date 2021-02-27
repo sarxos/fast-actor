@@ -11,12 +11,6 @@ import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.Test;
 
-import com.github.sarxos.fastactor.Actor;
-import com.github.sarxos.fastactor.ActorRef;
-import com.github.sarxos.fastactor.ActorSystem;
-import com.github.sarxos.fastactor.Props;
-import com.github.sarxos.fastactor.Receive;
-
 
 @SuppressWarnings("boxing")
 public class ActorTest {
@@ -117,7 +111,7 @@ public class ActorTest {
 		await().until(() -> !system.pools
 			.values()
 			.stream()
-			.flatMap(pool -> Arrays.stream(pool.threads))
+			.flatMap(pool -> Arrays.stream(pool.getThreads()))
 			.flatMap(thread -> thread.dockedCells.keySet().stream())
 			.filter(uuid -> uuid == ref.uuid())
 			.findAny()
@@ -126,7 +120,7 @@ public class ActorTest {
 		await().until(() -> !system.pools
 			.values()
 			.stream()
-			.flatMap(pool -> Arrays.stream(pool.threads))
+			.flatMap(pool -> Arrays.stream(pool.getThreads()))
 			.flatMap(thread -> thread.activeCells.keySet().stream())
 			.filter(uuid -> uuid == ref.uuid())
 			.findAny()

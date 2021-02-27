@@ -16,9 +16,15 @@ import com.github.sarxos.fastactor.Props;
 import com.github.sarxos.fastactor.Receive;
 
 
+/**
+ * An utility to probe messages from inside the actors.
+ *
+ * @author Bartosz Firyn (sarxos)
+ */
 public class Probe {
 
-	private static final Duration THREE_SECONDS = Duration.ofSeconds(3);
+	private static final long THREE_SECONDS = 3L;
+	private static final Duration THREE_SECONDS_DURATION = Duration.ofSeconds(THREE_SECONDS);
 
 	final BlockingQueue<Object> messages = new LinkedBlockingQueue<>();
 	final ActorSystem system;
@@ -29,14 +35,36 @@ public class Probe {
 		this.ref = system.actorOf(Props.create(ProbeActor::new));
 	}
 
+	/**
+	 * @return {@link ActorRef} to be used to receive messages
+	 */
 	public ActorRef ref() {
 		return ref;
 	}
 
+	/**
+	 * Receive one message which is the instance of a given {@link Class} or throws
+	 * {@link AssertionError} if different type has been received or when waiting time of
+	 * {@value #THREE_SECONDS} seconds was exceeded.
+	 *
+	 * @param <T> inferred message type
+	 * @param clazz the message class
+	 * @return The received message.
+	 */
 	public <T> T receiveInstanceOf(final Class<T> clazz) {
-		return receiveInstanceOf(clazz, THREE_SECONDS);
+		return receiveInstanceOf(clazz, THREE_SECONDS_DURATION);
 	}
 
+	/**
+	 * Receive one message which is the instance of a given {@link Class} or throws
+	 * {@link AssertionError} when provided time {@link Duration} was exceeded or when message of
+	 * the incompatible type has been received.
+	 *
+	 * @param <T> inferred message type
+	 * @param clazz the message class
+	 * @param duration the max time {@link Duration} to wait for message
+	 * @return The received message.
+	 */
 	@SuppressWarnings("unchecked")
 	public <T> T receiveInstanceOf(final Class<T> clazz, final Duration duration) {
 
@@ -44,13 +72,23 @@ public class Probe {
 
 		if (clazz.isInstance(received)) {
 			return (T) received;
+		} else {
+			throw new AssertionError("Expected message of " + clazz + " but got " + received.getClass());
 		}
-
-		throw new AssertionError("Expected message of " + clazz + " but got " + received.getClass());
 	}
 
+	/**
+	 * Receive N messages which are the instance of a given {@link Class} or throws
+	 * {@link AssertionError} if different type was received or when waiting time of
+	 * {@value #THREE_SECONDS} seconds has been exceeded.
+	 *
+	 * @param <T> inferred message type
+	 * @param n the number of messages to receive
+	 * @param clazz the message class
+	 * @return The received message.
+	 */
 	public <T> List<T> receiveNInstanceOf(final int n, final Class<T> clazz) {
-		return receiveNInstanceOf(n, clazz, THREE_SECONDS);
+		return receiveNInstanceOf(n, clazz, THREE_SECONDS_DURATION);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -75,10 +113,26 @@ public class Probe {
 		return received;
 	}
 
+	/**
+	 * Receive N messages or throws {@link AssertionError} when waiting time of
+	 * {@value #THREE_SECONDS} seconds has been exceeded.
+	 *
+	 * @param n the number of messages to be received
+	 * @param duration the max time {@link Duration} to wait for messages
+	 * @return The {@link List} of messages.
+	 */
 	public List<Object> receiveN(final int n) {
-		return receiveN(n, THREE_SECONDS);
+		return receiveN(n, THREE_SECONDS_DURATION);
 	}
 
+	/**
+	 * Receive N messages or throws {@link AssertionError} when provided {@link Duration} has been
+	 * exceeded.
+	 *
+	 * @param n the number of messages to be received
+	 * @param duration the max time {@link Duration} to wait for messages
+	 * @return The {@link List} of messages.
+	 */
 	public List<Object> receiveN(final int n, final Duration duration) {
 
 		final Operation op = new Operation(duration);
@@ -95,10 +149,22 @@ public class Probe {
 		return received;
 	}
 
+	/**
+	 * Receive one message or throws {@link AssertionError} when waiting time of
+	 * {@value #THREE_SECONDS} seconds has been exceeded.
+	 *
+	 * @return The received message.
+	 */
 	public Object receive() {
-		return receive(THREE_SECONDS);
+		return receive(THREE_SECONDS_DURATION);
 	}
 
+	/**
+	 * Receive one message in a given {@link Duration} or throws {@link AssertionError} instead.
+	 *
+	 * @param duration the max {@link Duration} to wait for the message
+	 * @return The received message.
+	 */
 	public Object receive(final Duration duration) {
 
 		final Object received;
@@ -115,9 +181,12 @@ public class Probe {
 		return received;
 	}
 
+	/**
+	 * Small utility to test timeouts.
+	 */
 	static class Operation {
 
-		final long start = System.currentTimeMillis();
+		final long start = currentTimeMillis();
 		final long duration;
 
 		public Operation(final Duration duration) {
@@ -129,6 +198,9 @@ public class Probe {
 		}
 	}
 
+	/**
+	 * Internal {@link Actor} receiving messages.
+	 */
 	class ProbeActor extends Actor {
 
 		@Override

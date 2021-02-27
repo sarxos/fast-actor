@@ -50,10 +50,6 @@ class DeadLettersActor extends Actor implements Events {
 	@Override
 	public Receive receive() {
 		return super.receive()
-			.match(DeadLetter.class, this::onDeadLetter);
-	}
-
-	private void onDeadLetter(final DeadLetter letter) {
-		emitEvent(letter);
+			.match(DeadLetter.class, this::emitEvent);
 	}
 }

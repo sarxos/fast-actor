@@ -19,7 +19,11 @@ public class ProbeTest {
 
 	@BeforeEach
 	public void setup() {
-		system = ActorSystem.create("ProbeTest");
+		try {
+			system = ActorSystem.create("ProbeTest");
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 		probe = new Probe(system);
 	}
 

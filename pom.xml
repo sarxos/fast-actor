@@ -6,7 +6,7 @@
   <parent>
     <groupId>com.github.sarxos</groupId>
     <artifactId>oss-parent</artifactId>
-    <version>6</version>
+    <version>7</version>
   </parent>
 
   <artifactId>fast-actor</artifactId>

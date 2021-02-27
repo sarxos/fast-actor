@@ -7,7 +7,6 @@ import static java.util.concurrent.locks.LockSupport.unpark;
 
 import java.time.Duration;
 import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.locks.LockSupport;
@@ -37,11 +36,6 @@ public class ActorThread extends Thread {
 	 * thread-safe, so please do not use outside the {@link ActorThread} it's referenced on.
 	 */
 	final Long2ObjectOpenHashMap<ActorCell<? extends Actor>> activeCells = new Long2ObjectOpenHashMap<>();
-
-	/**
-	 * {@link Runnable}s which will be run after this {@link Thread} is completed.
-	 */
-	final Deque<Runnable> terminators = new ArrayDeque<>(2);
 
 	/**
 	 * Queue to store messages from cells docked on this thread (internal communication).
@@ -87,14 +81,6 @@ public class ActorThread extends Thread {
 
 	@Override
 	public void run() {
-		try {
-			onRun();
-		} finally {
-			onComplete();
-		}
-	}
-
-	private void onRun() {
 
 		final var queue = new ArrayDeque<Envelope>();
 		final var idler = new IdleLoopCounter(maxIdleLoopsCount);
@@ -243,11 +229,6 @@ public class ActorThread extends Thread {
 		return dockedCells.get(uuid);
 	}
 
-	public ActorThread withTerminator(final Runnable terminator) {
-		terminators.add(terminator);
-		return this;
-	}
-
 	public void dock(final ActorCell<? extends Actor> cell) {
 
 		final var uuid = cell.uuid();
@@ -306,10 +287,6 @@ public class ActorThread extends Thread {
 			parked.value = false;
 			unpark(this);
 		}
-	}
-
-	private void onComplete() {
-		terminators.forEach(Runnable::run);
 	}
 
 	public static void setMaxIdleLoopsCount(int maxIdleLoopsCount) {

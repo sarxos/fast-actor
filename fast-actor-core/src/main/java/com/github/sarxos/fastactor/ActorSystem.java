@@ -1,13 +1,12 @@
 package com.github.sarxos.fastactor;
 
-import static com.github.sarxos.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
-
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
-import org.jctools.maps.NonBlockingHashMap;
 import org.jctools.maps.NonBlockingHashMapLong;
 
 import com.github.sarxos.fastactor.ActorThreadPool.ActorCellInfo;
@@ -22,42 +21,66 @@ public class ActorSystem {
 	 */
 	public static final long ZERO_UUID = 0;
 
-	/**
-	 * Default throughput (up to how many messages to process from the same actor before switching
-	 * to the next one).
-	 */
-	public static final int DEFAULT_THROUGHPUT = 100;
+	public static final String DEFAULT_THREAD_POOL_NAME = "default-thread-pool";
 
-	final NonBlockingHashMap<String, ActorThreadPool> pools = new NonBlockingHashMap<>(1);
+	final Map<String, ActorThreadPool> pools = new HashMap<>(1);
 	final NonBlockingHashMapLong<ActorCellInfo> cells = new NonBlockingHashMapLong<>();
 	final ActorRef zero = new ActorRef(this, new ActorCellInfo(null, null, ZERO_UUID));
 	final AtomicLong uuidGenerator = new AtomicLong(0);
 
 	final String name;
+
 	final int throughput;
-	final InternalActors internal;
+	final int parallelism;
+	final Configuration configuration;
 
-	public ActorSystem(final String name, final int throughput) {
+	private InternalActors internal;
 
+	public ActorSystem(final String name) {
 		this.name = name;
-		this.throughput = throughput;
-
-		addPool(new ActorThreadPool(this, DEFAULT_THREAD_POOL_NAME));
-
-		this.internal = new InternalActors();
+		this.configuration = new Configuration();
+		this.parallelism = configuration.getParallelism();
+		this.throughput = configuration.getThroughput();
 	}
 
 	public static ActorSystem create(final String name) {
-		final ActorSystem system = new ActorSystem(name, DEFAULT_THROUGHPUT);
-		return system;
+		return new ActorSystem(name)
+			.withPool(new ActorThreadPool(DEFAULT_THREAD_POOL_NAME))
+			.start();
+	}
+
+	public ActorSystem start() {
+
+		startPools();
+		createInternalActors();
+
+		return this;
+	}
+
+	private void startPools() {
+		for (var pool : pools.values()) {
+			pool.start(this);
+		}
+	}
+
+	private void createInternalActors() {
+		internal = new InternalActors();
 	}
 
 	public String getName() {
 		return name;
 	}
 
-	public boolean addPool(final ActorThreadPool pool) {
-		return pools.putIfAbsent(pool.getName(), pool) == null;
+	public ActorSystem withPool(final ActorThreadPool pool) {
+
+		if (pool == null) {
+			throw new IllegalArgumentException("Pool must not be null");
+		}
+		if (pools.putIfAbsent(pool.getName(), pool) != null) {
+			throw new IllegalArgumentException("Pool with name " + pool.getName() + " already exists in this actor system");
+		}
+
+		return this;
 	}
 
 	/**
@@ -89,7 +112,7 @@ public class ActorSystem {
 	<A extends Actor> ActorRef actorOf(final Props<A> props, final ActorRef parent) {
 
 		final var pool = getPoolFor(props).orElseThrow(poolNotFoundError(props));
-		final var info = pool.prepareCellInfo(props);
+		final var info = pool.prepareCellInfo(this, props);
 		final var cell = new ActorCell<A>(this, props, info, parent);
 		final var uuid = info.uuid;
 
@@ -255,6 +278,36 @@ public class ActorSystem {
 		final ActorRef askRouter = actorOf(Props.create(AskRouter::new), root);
 		final ActorRef deadLetters = actorOf(Props.create(DeadLettersActor::new), root);
 		final ActorRef eventBus = actorOf(Props.create(EventBusActor::new), system);
+	}
+
+	public static class Configuration {
+
+		/**
+		 * Default throughput (up to how many messages to process from the same actor before
+		 * switching to the next one).
+		 */
+		public static final int DEFAULT_THROUGHPUT = 100;
+
+		public static final int DEFAULT_PARALLELIZM = Runtime.getRuntime().availableProcessors();
+
+		private int throughput = DEFAULT_THROUGHPUT;
+		private int parallelism = DEFAULT_PARALLELIZM;
+
+		public int getThroughput() {
+			return throughput;
+		}
+
+		public void setThroughput(int throughput) {
+			this.throughput = throughput;
+		}
+
+		public int getParallelism() {
+			return parallelism;
+		}
+
+		public void setParallelism(int parallelism) {
+			this.parallelism = parallelism;
+		}
 	}
 }
 

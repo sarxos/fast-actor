@@ -2,6 +2,7 @@ package com.github.sarxos.fastactor.dsl;
 
 import com.github.sarxos.fastactor.ActorRef;
 import com.github.sarxos.fastactor.ActorSystem;
+import com.github.sarxos.fastactor.Directive;
 
 
 public interface Base extends InternalContext {
@@ -12,6 +13,10 @@ public interface Base extends InternalContext {
 
 	default ActorRef sender() {
 		return context().sender();
+	}
+
+	default ActorRef parent() {
+		return context().parent();
 	}
 
 	default long uuid() {
@@ -40,5 +45,9 @@ public interface Base extends InternalContext {
 
 	default void forward(final Object message, final ActorRef target) {
 		target.tell(message, sender());
+	}
+
+	default void dispose() {
+		self().tell(Directive.POISON_PILL, self());
 	}
 }

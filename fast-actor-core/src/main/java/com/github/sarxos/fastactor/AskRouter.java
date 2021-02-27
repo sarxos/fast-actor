@@ -2,11 +2,13 @@ package com.github.sarxos.fastactor;
 
 import java.util.concurrent.CompletableFuture;
 
+import com.github.sarxos.fastactor.dsl.Base;
+
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 
-class AskRouter extends Actor {
+class AskRouter extends Actor implements Base {
 
 	static final class Ask<R> {
 
@@ -40,19 +42,17 @@ class AskRouter extends Actor {
 
 	private void onAsk(final Ask<?> ask) {
 
-		final var sender = context().self();
 		final var ref = getFreeUuidOrCreateNewRoutee();
 		final var uuid = ref.uuid();
 
 		busy.add(uuid);
-		ref.tell(ask, sender);
+
+		tell(ask, ref);
 	}
 
 	private void onAskDone(final AskDone done) {
 
-		final var uuid = context()
-			.sender()
-			.uuid();
+		final var uuid = sender().uuid();
 
 		busy.remove(uuid);
 		free.push(uuid);
@@ -70,15 +70,15 @@ class AskRouter extends Actor {
 		final var system = context.system();
 
 		// XXX PERF rework this class to hold ActorRef instead of long uuids
+		// so we can avoid calling system::find
 
 		return system.find(uuid);
-
 	}
 
-	static class AskDone {
+	static final class AskDone {
 	}
 
-	static class AskRoutee extends Actor {
+	static final class AskRoutee extends Actor implements Base {
 
 		private Ask<?> ask;
 
@@ -95,10 +95,8 @@ class AskRouter extends Actor {
 
 			final var message = ask.message;
 			final var target = ask.target;
-			final var sender = context().self();
-			final var system = context().system();
 
-			system.tell(message, target, sender);
+			tell(message, target);
 		}
 
 		public void onResponse(final Object result) {
@@ -106,10 +104,7 @@ class AskRouter extends Actor {
 			this.ask.complete(result);
 			this.ask = null;
 
-			final var parent = context().parent();
-			final var sender = context().self();
-
-			parent.tell(I_AM_DONE, sender);
+			tell(I_AM_DONE, parent());
 		}
 	}
 }

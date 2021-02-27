@@ -1,6 +1,6 @@
 package com.github.sarxos.fastactor;
 
-import static com.github.sarxos.fastactor.ActorThreadPool.DEFAULT_THREAD_POOL_NAME;
+import static com.github.sarxos.fastactor.ActorSystem.DEFAULT_THREAD_POOL_NAME;
 
 
 /**

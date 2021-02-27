@@ -62,7 +62,7 @@ public class FastActorPingPongBenchmark {
 	public static class Context {
 
 		ActorSystem system;
-		CountDownLatch blocker;
+		CountDownLatch latch;
 
 		@Setup(Level.Iteration)
 		public void setupIteration() {
@@ -76,7 +76,7 @@ public class FastActorPingPongBenchmark {
 
 		@Setup(Level.Invocation)
 		public void setupInvocation() {
-			blocker = new CountDownLatch(2);
+			latch = new CountDownLatch(2);
 		}
 	}
 
@@ -84,10 +84,10 @@ public class FastActorPingPongBenchmark {
 	public void benchmark(final DeliveryCounter counter, Context context) throws InterruptedException {
 
 		final var system = context.system;
-		final var blocker = context.blocker;
+		final var latch = context.latch;
 
-		final var ref1 = system.actorOf(Props.create(() -> new TestActor(counter, blocker, 1)));
-		final var ref2 = system.actorOf(Props.create(() -> new TestActor(counter, blocker, 2)));
+		final var ref1 = system.actorOf(Props.create(() -> new Ping(counter, latch)));
+		final var ref2 = system.actorOf(Props.create(() -> new Pong(counter, latch)));
 
 		IntStream
 			.range(0, MESSAGES_COUNT)
@@ -97,7 +97,7 @@ public class FastActorPingPongBenchmark {
 				a.tell(Integer.valueOf(i), b);
 			});
 
-		blocker.await();
+		latch.await();
 	}
 }
 
@@ -105,13 +105,11 @@ class TestActor extends Actor implements Base {
 
 	final DeliveryCounter counter;
 	final CountDownLatch blocker;
-	final int number;
 	long count = 0;
 
-	public TestActor(final DeliveryCounter counter, final CountDownLatch blocker, final int number) {
+	public TestActor(final DeliveryCounter counter, final CountDownLatch blocker) {
 		this.counter = counter;
 		this.blocker = blocker;
-		this.number = number;
 	}
 
 	@Override
@@ -120,21 +118,37 @@ class TestActor extends Actor implements Base {
 			.match(Integer.class, this::onInteger);
 	}
 
-	@Override
-	public void postStop() {
-		if (number == 1) {
-			counter.count1 += count;
-		} else {
-			counter.count2 += count;
-		}
-		blocker.countDown();
-	}
-
 	private void onInteger(final Integer i) {
 		if (count++ >= EXPECTED_DELIVERIES_COUNT) {
 			stop();
 		} else {
 			reply(i);
 		}
+	}
+}
+
+class Ping extends TestActor {
+
+	public Ping(final DeliveryCounter counter, final CountDownLatch blocker) {
+		super(counter, blocker);
+	}
+
+	@Override
+	public void postStop() {
+		counter.count1 += count;
+		blocker.countDown();
+	}
+}
+
+class Pong extends TestActor {
+
+	public Pong(final DeliveryCounter counter, final CountDownLatch blocker) {
+		super(counter, blocker);
+	}
+
+	@Override
+	public void postStop() {
+		counter.count2 += count;
+		blocker.countDown();
 	}
 }

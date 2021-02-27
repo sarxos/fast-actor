@@ -3,6 +3,7 @@ package com.github.sarxos.fastactor.util;
 import static java.util.Objects.requireNonNull;
 
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 
@@ -24,7 +25,7 @@ public final class Lazy<T> implements Supplier<T> {
 	 * @return A new instance of Lazy
 	 */
 	@SuppressWarnings("unchecked")
-	public static <T> Lazy<T> of(Supplier<? extends T> supplier) {
+	public static <T> Lazy<T> of(final Supplier<? extends T> supplier) {
 		if (supplier instanceof Lazy) {
 			return (Lazy<T>) supplier;
 		} else {
@@ -72,5 +73,12 @@ public final class Lazy<T> implements Supplier<T> {
 	@Override
 	public String toString() {
 		return Objects.toString(get());
+	}
+
+	public Lazy<T> ifEvaluated(final Consumer<T> consumer) {
+		if (isEvaluated()) {
+			consumer.accept(value);
+		}
+		return this;
 	}
 }
