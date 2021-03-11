@@ -17,7 +17,7 @@ import org.jctools.queues.MpscUnboundedArrayQueue;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 
 
-public class ActorThread extends Thread {
+public class ActorThread extends Thread implements Dispatcher {
 
 	/**
 	 * How many idle loops {@link ActorThread} should perform before thread is parked.
@@ -258,6 +258,7 @@ public class ActorThread extends Thread {
 	 *
 	 * @param envelope the envelope with message
 	 */
+	@Override
 	public void deposit(final Envelope envelope) {
 		if (this == currentThread()) {
 			deposit(envelope, internalQueue);

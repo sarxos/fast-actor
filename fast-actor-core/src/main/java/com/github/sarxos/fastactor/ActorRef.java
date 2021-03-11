@@ -14,7 +14,7 @@ import com.github.sarxos.fastactor.ActorThreadPool.ActorCellInfo;
 public class ActorRef {
 
 	final ActorSystem system;
-	final ActorThread thread;
+	final Dispatcher thread;
 	final long uuid;
 
 	ActorRef(final ActorSystem system, final ActorCellInfo info) {
@@ -27,7 +27,7 @@ public class ActorRef {
 		return uuid;
 	}
 
-	public ActorThread dispatcher() {
+	public Dispatcher dispatcher() {
 		return thread;
 	}
 
