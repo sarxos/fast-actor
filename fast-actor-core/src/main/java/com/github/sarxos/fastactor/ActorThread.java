@@ -22,8 +22,8 @@ public class ActorThread extends Thread implements Dispatcher {
 	/**
 	 * How many idle loops {@link ActorThread} should perform before thread is parked.
 	 */
-	static int maxIdleLoopsCount = 1024;
-	static int initialQueueDepth = 1024;
+	static int maxIdleLoopsCount = 8;
+	static int initialQueueDepth = 32;
 
 	static long delay = Duration.ofMillis(100).toNanos();
 
