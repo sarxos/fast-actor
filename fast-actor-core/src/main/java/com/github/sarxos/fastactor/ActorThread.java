@@ -3,18 +3,18 @@ package com.github.sarxos.fastactor;
 import static com.github.sarxos.fastactor.ActorCell.DeliveryStatus.ACCEPTED;
 import static com.github.sarxos.fastactor.ActorCell.ProcessingStatus.COMPLETE;
 import static com.github.sarxos.fastactor.ActorSystem.ZERO_UUID;
-import static java.util.concurrent.locks.LockSupport.unpark;
 
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Queue;
-import java.util.UUID;
 import java.util.concurrent.locks.LockSupport;
 
 import org.jctools.maps.NonBlockingHashMapLong;
 import org.jctools.queues.MpscUnboundedArrayQueue;
 
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ObjectCollection;
 
 
 public class ActorThread extends Thread implements Dispatcher {
@@ -23,38 +23,39 @@ public class ActorThread extends Thread implements Dispatcher {
 	 * How many idle loops {@link ActorThread} should perform before thread is parked.
 	 */
 	static int maxIdleLoopsCount = 1024;
+	static int initialQueueDepth = 1024;
 
 	static long delay = Duration.ofMillis(100).toNanos();
 
 	/**
-	 * Mapping between cell {@link UUID} and corresponding {@link ActorCell} instance.
+	 * Mapping between cell UID and corresponding {@link ActorCell} instance.
 	 */
 	final NonBlockingHashMapLong<ActorCell<? extends Actor>> dockedCells = new NonBlockingHashMapLong<>();
 
 	/**
 	 * The active cells are the ones which have at least one message in the inbox. This map is not
-	 * thread-safe, so please do not use outside the {@link ActorThread} it's referenced on.
+	 * thread-safe, so please do not use it outside the {@link ActorThread} it's referenced on.
 	 */
-	final Long2ObjectOpenHashMap<ActorCell<? extends Actor>> activeCells = new Long2ObjectOpenHashMap<>();
+	final Long2ObjectMap<ActorCell<? extends Actor>> activeCells = new Long2ObjectOpenHashMap<>();
+
+	final ObjectCollection<ActorCell<? extends Actor>> activeCellsList = activeCells.values();
 
 	/**
 	 * Queue to store messages from cells docked on this thread (internal communication).
 	 */
-	final Queue<Envelope> internalQueue = new ArrayDeque<>();
+	final Queue<Envelope> internalQueue = new ArrayDeque<>(initialQueueDepth);
 
 	/**
 	 * Queue to store messages from cells docked on other threads (interthread communication).
 	 */
-	final MpscUnboundedArrayQueue<Envelope> externalQueue = new MpscUnboundedArrayQueue<>(4096);
+	final MpscUnboundedArrayQueue<Envelope> externalQueue = new MpscUnboundedArrayQueue<>(initialQueueDepth);
 
 	/**
 	 * Is thread parked.
 	 */
-	// final AtomicBoolean parked = new AtomicBoolean(true);
-
-	final VolatileBoolean parked = new VolatileBoolean(false);
-
-	// final VolatileBoolean running = new VolatileBoolean(true);
+	// final AtomicBoolean parked = new AtomicBoolean(false);
+	// final VolatileBoolean parked = new VolatileBoolean(false);
+	private volatile boolean parked = false;
 
 	/**
 	 * The {@link ActorSystem} this {@link ActorThread} lives in.
@@ -79,19 +80,18 @@ public class ActorThread extends Thread implements Dispatcher {
 		this.throughput = system.throughput;
 	}
 
+	private final ArrayDeque<Envelope> queue = new ArrayDeque<Envelope>(initialQueueDepth * 2);
+	private final IdleLoopCounter idler = new IdleLoopCounter(maxIdleLoopsCount);
+
 	@Override
 	public void run() {
 
-		final var queue = new ArrayDeque<Envelope>();
-		final var idler = new IdleLoopCounter(maxIdleLoopsCount);
-
 		while (!isInterrupted()) {
-			// while (running.value) {
+
+			var busy = 0;
 
 			// move external messages to the temporary queue to avoid contention
 			// move internal messages to the temporary queue to avoid concurrent modification
-
-			var busy = 0;
 
 			busy += drain(externalQueue, queue);
 			busy += drain(internalQueue, queue);
@@ -111,10 +111,20 @@ public class ActorThread extends Thread implements Dispatcher {
 	}
 
 	private void park() {
-		parked.value = true;
-		// LockSupport.park(this);
+		parked = true;
 		LockSupport.parkNanos(delay);
-		parked.value = false;
+		parked = false;
+	}
+
+	/**
+	 * Wake up (unpark) the {@link ActorThread} if queues were modified.
+	 *
+	 * @param modified
+	 */
+	private void wakeUp() {
+		if (parked) {
+			LockSupport.unpark(this);
+		}
 	}
 
 	private void spin() {
@@ -122,9 +132,13 @@ public class ActorThread extends Thread implements Dispatcher {
 	}
 
 	private <T> int drain(final Queue<T> source, final Queue<T> target) {
+
 		int count = 0;
-		do {
+
+		for (;;) {
+
 			final T element = source.poll();
+
 			if (element == null) {
 				return count;
 			} else {
@@ -132,12 +146,12 @@ public class ActorThread extends Thread implements Dispatcher {
 					count++;
 				}
 			}
-		} while (true);
+		}
 	}
 
 	private int deliver(final Queue<Envelope> queue) {
 
-		var t = this;
+		final var thread = this;
 		var i = 0;
 
 		for (;;) {
@@ -154,7 +168,7 @@ public class ActorThread extends Thread implements Dispatcher {
 				system.forwardToDeadLetters(envelope);
 			}
 
-			final var cell = activeCells.computeIfAbsent(uuid, t::findCell);
+			final var cell = activeCells.computeIfAbsent(uuid, thread::findCell);
 
 			deliver(envelope, cell);
 		}
@@ -199,7 +213,7 @@ public class ActorThread extends Thread implements Dispatcher {
 	 */
 	private int process() {
 
-		final var iterator = activeCells.values().iterator();
+		final var iterator = activeCellsList.iterator();
 
 		var i = 0;
 
@@ -207,8 +221,7 @@ public class ActorThread extends Thread implements Dispatcher {
 
 			final var cell = iterator.next();
 			if (cell == null) {
-				// XXX this is edgy - there should not be null here, but there is
-				continue;
+				continue; // XXX this is edgy - there should not be null here, but there is
 			}
 
 			final var status = cell.process(throughput);
@@ -216,8 +229,7 @@ public class ActorThread extends Thread implements Dispatcher {
 			if (status == COMPLETE) {
 				iterator.remove();
 			} else {
-				i++;
-				// more iterations required
+				i++; // more iterations required to complete cell inbox processing
 			}
 		}
 
@@ -229,7 +241,7 @@ public class ActorThread extends Thread implements Dispatcher {
 		return dockedCells.get(uuid);
 	}
 
-	public void dock(final ActorCell<? extends Actor> cell) {
+	public final void dock(final ActorCell<? extends Actor> cell) {
 
 		final var uuid = cell.uuid();
 		final var overwritten = dockedCells.putIfAbsent(uuid, cell) != null;
@@ -248,7 +260,7 @@ public class ActorThread extends Thread implements Dispatcher {
 	 * @param uuid the {@link ActorCell} ID
 	 * @return The removed {@link ActorCell} or null when no cell with a given ID was docked here
 	 */
-	public ActorCell<? extends Actor> remove(final long uuid) {
+	public final ActorCell<? extends Actor> remove(final long uuid) {
 		return dockedCells.remove(uuid);
 	}
 
@@ -259,7 +271,7 @@ public class ActorThread extends Thread implements Dispatcher {
 	 * @param envelope the envelope with message
 	 */
 	@Override
-	public void deposit(final Envelope envelope) {
+	public final void deposit(final Envelope envelope) {
 		if (this == currentThread()) {
 			deposit(envelope, internalQueue);
 		} else {
@@ -276,18 +288,6 @@ public class ActorThread extends Thread implements Dispatcher {
 	private void deposit(final Envelope envelope, final Queue<Envelope> queue) {
 		queue.offer(envelope);
 		wakeUp();
-	}
-
-	/**
-	 * Wake up (unpark) the {@link ActorThread} if queues were modified.
-	 *
-	 * @param modified
-	 */
-	private void wakeUp() {
-		while (parked.value) {
-			parked.value = false;
-			unpark(this);
-		}
 	}
 
 	public static void setMaxIdleLoopsCount(int maxIdleLoopsCount) {
@@ -311,14 +311,14 @@ public class ActorThread extends Thread implements Dispatcher {
 			this.max = max;
 		}
 
-		void reset() {
+		final void reset() {
 			counter = 0;
 		}
 
 		/**
 		 * @return True if {@link ActorThread} should be parked or false otherwise.
 		 */
-		boolean shouldBeParked() {
+		final boolean shouldBeParked() {
 
 			final int c = counter++;
 			final int t = -((c - max) >> 31);

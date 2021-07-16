@@ -1,5 +1,5 @@
-Benchmark                                     Mode  Cnt         Score        Error  Units
-FastActorPingPongBenchmark.benchmark         thrpt   25         0.806 ±      0.044  ops/s
-FastActorPingPongBenchmark.benchmark:count1  thrpt   25   8058550.176 ± 438648.243  ops/s
-FastActorPingPongBenchmark.benchmark:count2  thrpt   25   8058550.176 ± 438648.243  ops/s
-FastActorPingPongBenchmark.benchmark:total   thrpt   25  16117100.351 ± 877296.486  ops/s
+Benchmark                                     Mode  Cnt         Score         Error  Units
+FastActorPingPongBenchmark.benchmark         thrpt   25         0.871 ±       0.054  ops/s
+FastActorPingPongBenchmark.benchmark:count1  thrpt   25   8713669.497 ±  538117.621  ops/s
+FastActorPingPongBenchmark.benchmark:count2  thrpt   25   8713669.497 ±  538117.621  ops/s
+FastActorPingPongBenchmark.benchmark:total   thrpt   25  17427338.993 ± 1076235.242  ops/s

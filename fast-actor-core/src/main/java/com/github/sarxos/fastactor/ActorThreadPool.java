@@ -2,7 +2,6 @@ package com.github.sarxos.fastactor;
 
 import static com.github.sarxos.fastactor.Props.RUN_ON_ANY_THREAD;
 
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.Supplier;
 
@@ -25,13 +24,17 @@ public class ActorThreadPool extends ThreadGroup {
 		this.parallelism = system.parallelism;
 		this.threads = new ActorThread[parallelism];
 
+		// Create all threads.
+
 		for (int index = 0; index < parallelism; index++) {
 			threads[index] = newThread(system, index);
 		}
 
-		Arrays
-			.stream(threads)
-			.forEach(Thread::start);
+		// Start all threads.
+
+		for (int index = 0; index < parallelism; index++) {
+			threads[index].start();
+		}
 	}
 
 	/**
@@ -157,15 +160,15 @@ public class ActorThreadPool extends ThreadGroup {
 	}
 }
 
-class AtomicActorThreadsArray extends AtomicReferenceArray<ActorThread> {
+final class AtomicActorThreadsArray extends AtomicReferenceArray<ActorThread> {
 
 	private static final long serialVersionUID = 1L;
 
-	public AtomicActorThreadsArray(int length) {
+	public AtomicActorThreadsArray(final int length) {
 		super(length);
 	}
 
-	public ActorThread getOrCompute(final int i, final Supplier<ActorThread> supplier) {
+	public final ActorThread getOrCompute(final int i, final Supplier<ActorThread> supplier) {
 
 		final ActorThread thread;
 		final ActorThread tmp = get(i);

@@ -37,6 +37,7 @@ public class FastActorPingPongBenchmark {
 		BenchmarkRunner.run(FastActorPingPongBenchmark.class);
 	}
 
+	static final Integer TEST_MESSAGE = Integer.valueOf(1);
 	static final int MESSAGES_COUNT = 100;
 	static final int EXPECTED_DELIVERIES_COUNT = 10_000_000;
 
